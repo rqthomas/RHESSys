@@ -63,8 +63,8 @@ void execute_daily_output_event(struct world_object *world,
 	void output_shadow_strata(int, int, int, int, struct canopy_strata_object*,
 			struct date, FILE*);
 
-	void output_stream_routing(struct stream_network_object*, struct date,
-			FILE*);
+	void output_stream_routing(struct stream_network_object*,
+			struct command_line_object*, struct date, FILE*);
 	/*--------------------------------------------------------------*/
 	/*	Local variable definition.									*/
 	/*--------------------------------------------------------------*/
@@ -110,7 +110,7 @@ void execute_daily_output_event(struct world_object *world,
 							== reachID) || (reachID == -999)) {
 						output_stream_routing(
 								&(world[0].basins[b]->stream_list.stream_network[s]),
-								date, outfile->stream_routing->daily);
+							command_line, date, outfile->stream_routing->daily);
 					}
 				}
 			}

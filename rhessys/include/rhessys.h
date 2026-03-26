@@ -520,6 +520,15 @@ double previous_Qin; /* m3/s */
 double Qin; /* m3/s */
 double previous_lateral_input; /* m2/s */
 double Qout; /* m3/s */
+/* nutrient routing (only used when grow_flag > 0) */
+double NO3_in;  /* kg N/day - load received from upstream reaches */
+double NH4_in;  /* kg N/day */
+double DON_in;  /* kg N/day */
+double DOC_in;  /* kg C/day */
+double NO3_out; /* kg N/day - total load leaving reach outlet */
+double NH4_out; /* kg N/day */
+double DON_out; /* kg N/day */
+double DOC_out; /* kg C/day */
 };
 
 struct stream_list_object
@@ -1259,6 +1268,7 @@ struct	soil_default
 	double  NO3_adsorption_rate;				/* kg /kg soil */
 	double  NH4_adsorption_rate;				/* kg /kg soil */
 	double  denitrif_proportion;				/* (DIM) 0-1 */
+	double  nitrif_prop;					/* (DIM) scales maximum nitrification rate */
 	double	DON_production_rate;					/* (DIM) 0-1 */
 	double	gl_c;						/* m/s */
 	double	gsurf_slope;					/* (DIM) */

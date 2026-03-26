@@ -81,6 +81,7 @@ double  compute_stream_routing(struct command_line_object *command_line,
     double xarea;
     double lateral_input_flow,streamflow;
 	double Qout,Qin,previous_lateral_input,length,initial_flow,sum;
+	double lateral_NO3, lateral_NH4, lateral_DON, lateral_DOC;
 	
 
 	struct patch_object *patch;
@@ -96,6 +97,10 @@ double  compute_stream_routing(struct command_line_object *command_line,
 	for (i = 0; i < num_reaches; i++) {
 	/* calculate total lateral input from patches */
 	   lateral_input_flow = 0.0;
+		lateral_NO3 = 0.0;
+		lateral_NH4 = 0.0;
+		lateral_DON = 0.0;
+		lateral_DOC = 0.0;
 		Qout=0.0;
 		Qin=0.0;
 		previous_lateral_input=0.0;
@@ -105,7 +110,14 @@ double  compute_stream_routing(struct command_line_object *command_line,
 	            patch=stream_network[i].lateral_inputs[j];
 		   if (patch[0].drainage_type == STREAM  ){
 	      		lateral_input_flow += (patch[0].streamflow)*patch[0].area/dt/(stream_network[i].length); //unit:m2/s
-			   sum+= (patch[0].streamflow)*patch[0].area;}
+			   sum+= (patch[0].streamflow)*patch[0].area;
+			   if (command_line[0].grow_flag > 0) {
+				   lateral_NO3 += patch[0].streamflow_NO3 * patch[0].area; /* kg N/day */
+				   lateral_NH4 += patch[0].streamflow_NH4 * patch[0].area;
+				   lateral_DON += patch[0].streamflow_DON * patch[0].area;
+				   lateral_DOC += patch[0].streamflow_DOC * patch[0].area;
+			   }
+			}
 		   
 	
 	}
@@ -164,6 +176,18 @@ double count this way */
 		stream_network[i].previous_lateral_input=lateral_input_flow;
 		stream_network[i].previous_Qin=Qin;
 		stream_network[i].Qin=0.0;
+
+		/* compute reach nutrient outlet load and reset inbox for next timestep */
+		if (command_line[0].grow_flag > 0) {
+			stream_network[i].NO3_out = stream_network[i].NO3_in + lateral_NO3;
+			stream_network[i].NH4_out = stream_network[i].NH4_in + lateral_NH4;
+			stream_network[i].DON_out = stream_network[i].DON_in + lateral_DON;
+			stream_network[i].DOC_out = stream_network[i].DOC_in + lateral_DOC;
+			stream_network[i].NO3_in = 0.0;
+			stream_network[i].NH4_in = 0.0;
+			stream_network[i].DON_in = 0.0;
+			stream_network[i].DOC_in = 0.0;
+		}
 		
         /*calulate income flow  for downstream neighbours */
 	     for (j=0; j< stream_network[i].num_downstream_neighbours; j++) {
@@ -171,6 +195,12 @@ double count this way */
                             for(k=i;k<num_reaches;k++)
                                if(stream_network[k].reach_ID == downstream_neighbour){
                                     stream_network[k].Qin += Qout/stream_network[i].num_downstream_neighbours;
+					if (command_line[0].grow_flag > 0) {
+						stream_network[k].NO3_in += stream_network[i].NO3_out / stream_network[i].num_downstream_neighbours;
+						stream_network[k].NH4_in += stream_network[i].NH4_out / stream_network[i].num_downstream_neighbours;
+						stream_network[k].DON_in += stream_network[i].DON_out / stream_network[i].num_downstream_neighbours;
+						stream_network[k].DOC_in += stream_network[i].DOC_out / stream_network[i].num_downstream_neighbours;
+					}
 					break;			
 	}	
 	}

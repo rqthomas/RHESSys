@@ -133,6 +133,14 @@ struct stream_list_object construct_stream_routing_topology(
 		stream_network_ini[i].previous_Qin=0.0;
 		stream_network_ini[i].Qin=0.0;
 		stream_network_ini[i].Qout=0.0;
+		stream_network_ini[i].NO3_in=0.0;
+		stream_network_ini[i].NH4_in=0.0;
+		stream_network_ini[i].DON_in=0.0;
+		stream_network_ini[i].DOC_in=0.0;
+		stream_network_ini[i].NO3_out=0.0;
+		stream_network_ini[i].NH4_out=0.0;
+		stream_network_ini[i].DON_out=0.0;
+		stream_network_ini[i].DOC_out=0.0;
 	
 		/*find neighbouring hillslopes by reach_ID, one hill ID is reach_ID-1, another is reach_ID*/
 		

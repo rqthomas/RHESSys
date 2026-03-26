@@ -152,7 +152,7 @@ int update_nitrif(
 		/* 	by scaling a maximum rate suggested by Parton et al.		*/
 		/*--------------------------------------------------------------*/
 		
-		nitrify = water_scalar * T_scalar * N_scalar * pH_scalar * MAX_RATE * ns_soil->sminn * 1000.0; 
+		nitrify = nitrif_prop * water_scalar * T_scalar * N_scalar * pH_scalar * MAX_RATE * ns_soil->sminn * 1000.0; 
 
 	} /* end mineralized N available */
 	else
