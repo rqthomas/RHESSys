@@ -114,6 +114,7 @@ void  update_drainage_land(
 	double NH4_leached_to_surface; /* kg/m2 */
 	double DON_leached_to_surface; /* kg/m2 */
 	double DOC_leached_to_surface; /* kg/m2 */
+	double sediment_leached_to_surface; /* kg - total sediment mass carried by overland flow */
 	double N_leached_total; /* kg/m2 */
 	double DON_leached_total; /* kg/m2 */
 	double DOC_leached_total; /* kg/m2 */
@@ -142,8 +143,7 @@ void  update_drainage_land(
 	NO3_leached_to_surface = 0.0;
 	NH4_leached_to_surface = 0.0;
 	DOC_leached_to_surface = 0.0;
-	DON_leached_to_surface = 0.0;
-
+	DON_leached_to_surface = 0.0;	sediment_leached_to_surface = 0.0;
 	/*--------------------------------------------------------------*/
 	/*	m and K are multiplied by sensitivity analysis variables */
 	/*--------------------------------------------------------------*/
@@ -428,6 +428,12 @@ void  update_drainage_land(
 			NH4_leached_to_surface = Nout * patch[0].area;
 			patch[0].surface_NH4 -= Nout;
 			}
+		/* sediment carried by overland flow (proportional to Qout/detention_store) */
+		if (patch[0].surface_sediment > 0.0) {
+			double sed_frac = min(1.0, (Qout / patch[0].detention_store));
+			sediment_leached_to_surface = sed_frac * patch[0].surface_sediment * patch[0].area;
+			patch[0].surface_sediment -= sed_frac * patch[0].surface_sediment;
+			}
 		route_to_surface = (Qout *  patch[0].area);
 		patch[0].detention_store -= Qout;
 		patch[0].surface_Qout += Qout;
@@ -505,8 +511,15 @@ void  update_drainage_land(
 			neigh[0].surface_DON += Nin;
 			Nin = (patch[0].surface_innundation_list[d].neighbours[j].gamma * DOC_leached_to_surface) / neigh[0].area;
 			neigh[0].surface_DOC += Nin;
+			}		/* route sediment with overland flow */
+		if (sediment_leached_to_surface > 0.0) {
+			double sed_in = (patch[0].surface_innundation_list[d].neighbours[j].gamma
+				* sediment_leached_to_surface) / neigh[0].area;
+			if (neigh[0].drainage_type == STREAM)
+				neigh[0].streamflow_sediment += sed_in;
+			else
+				neigh[0].surface_sediment += sed_in;
 			}
-
 		/*--------------------------------------------------------------*/
 		/*	- now surface water 					*/
 		/*	surface stores should be updated to facilitate transfer */

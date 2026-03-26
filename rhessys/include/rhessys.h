@@ -410,6 +410,7 @@ struct accumulate_patch_object
    double stream_DON;
    double stream_NO3;
    double stream_NH4;
+   double stream_sediment; /* kg/m2 cumulative sediment delivered to stream */
    double streamflow;
    double leach;
    double denitrif;
@@ -529,6 +530,8 @@ double NO3_out; /* kg N/day - total load leaving reach outlet */
 double NH4_out; /* kg N/day */
 double DON_out; /* kg N/day */
 double DOC_out; /* kg C/day */
+double sediment_in;  /* kg/day - sediment received from upstream + lateral */
+double sediment_out; /* kg/day - sediment leaving reach outlet */
 };
 
 struct stream_list_object
@@ -906,6 +909,7 @@ struct hillslope_object
         double  streamflow_NH4;         /* kgN/m2/day           */
         double  streamflow_DON;         /* kgN/m2/day           */
         double  streamflow_DOC;         /* kgC/m2/day           */
+        double  streamflow_sediment;    /* kg/m2/day            */
         double  hourly_streamflow_NO3;  /* kgN/m2/day           */
         double  hourly_streamflow_NH4;  /* kgN/m2/day           */
         double  hourly_streamflow_DON;  /* kgN/m2/day           */
@@ -1277,6 +1281,9 @@ struct	soil_default
 	double  theta_mean_std_p2;				/* DIM */
 	double  overstory_height_thresh;        /* Defines lower limit of overstory (m) */
 	double  understory_height_thresh;       /* Defines upper limit of understory (m) */
+	double  soil_erodibility_K;             /* USLE K-factor (kg h / MJ mm) */
+	double  sediment_transport_capacity_c;  /* dimensionless transport coefficient */
+	double  cover_and_management_C;         /* USLE C-factor (0=max cover, 1=bare soil; 0=use LAI-derived) */
 	struct soil_class	soil_type;
 	};
 
@@ -1977,6 +1984,8 @@ struct patch_object
         double  streamflow_DON;         /* kgN/m2/day   */
         double  streamflow_NO3;         /* kg/m2/day    */
         double  streamflow_NH4;         /* kg/m2/day    */
+        double  surface_sediment;       /* kg/m2 - mobilized sediment pool */
+        double  streamflow_sediment;    /* kg/m2/day - daily sediment flux to stream */
         double  road_cut_depth;         /* m */
         double  rain_throughfall;       /* m water      */
         double  recharge;       /* m water      */

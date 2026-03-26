@@ -572,6 +572,14 @@ void  update_drainage_road(
 			patch[0].surface_DOC  -= Nout;
 			patch[0].next_stream[0].streamflow_DOC += (Nout * patch[0].area / patch[0].next_stream[0].area);
 			}
+		/* route road surface sediment to stream with detention overflow */
+		if (patch[0].surface_sediment > 0.0) {
+			double sed_frac = min(1.0, (Qout / patch[0].detention_store));
+			double sed_out  = sed_frac * patch[0].surface_sediment;
+			patch[0].surface_sediment -= sed_out;
+			patch[0].next_stream[0].streamflow_sediment +=
+				(sed_out * patch[0].area / patch[0].next_stream[0].area);
+			}
 		patch[0].next_stream[0].streamflow += (Qout * patch[0].area / patch[0].next_stream[0].area);
 		patch[0].next_stream[0].hourly_sur2stream_flow += Qout *  patch[0].area / patch[0].next_stream[0].area;
 		patch[0].detention_store -= Qout;
@@ -605,7 +613,13 @@ void  update_drainage_road(
 		patch[0].next_stream[0].streamflow_NH4 += Nin;
 		}
 
-		
+	/* road surface sediment routed to stream via subsurface path */
+	if (patch[0].surface_sediment > 0.0) {
+		patch[0].next_stream[0].streamflow_sediment +=
+			(patch[0].surface_sediment * patch[0].area / patch[0].next_stream[0].area);
+		patch[0].surface_sediment = 0.0;
+		}
+
 	/*--------------------------------------------------------------*/
 	/*	route flow to neighbours				*/
 	/*	route n_leaching if grow flag specfied			*/

@@ -614,16 +614,35 @@ void add_headers(struct world_output_file_object *world_output_files,
 		/*--------------------------------------------------------------*/
 		
         outfile = world_output_files[0].stream_routing[0].daily;
-		fprintf(outfile, "%s %s %s %s %s %s %s %s %s\n",
-				"day",
-				"month",
-				"year",
-				"reachID",
-				"Qout",
-				"lateralinput",
-				"Qin",
-				"waterdepth",
-				"reservoir.store");
+		if (command_line[0].grow_flag > 0) {
+			fprintf(outfile, "%s %s %s %s %s %s %s %s %s %s %s %s %s %s\n",
+					"day",
+					"month",
+					"year",
+					"reachID",
+					"Qout",
+					"lateralinput",
+					"Qin",
+					"waterdepth",
+					"reservoir.store",
+					"NO3_out",
+					"NH4_out",
+					"DON_out",
+					"DOC_out",
+					"sediment_out");
+		} else {
+			fprintf(outfile, "%s %s %s %s %s %s %s %s %s %s\n",
+					"day",
+					"month",
+					"year",
+					"reachID",
+					"Qout",
+					"lateralinput",
+					"Qin",
+					"waterdepth",
+					"reservoir.store",
+					"sediment_out");
+		}
 	}	
 	return;
 } /*end add_headers*/

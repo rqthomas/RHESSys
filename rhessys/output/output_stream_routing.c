@@ -51,10 +51,11 @@ void	output_stream_routing(
 	/*	When grow_flag > 0, four additional columns are appended:*/
 	/*	         NO3_out(kgN/day) NH4_out(kgN/day)		*/
 	/*	         DON_out(kgN/day) DOC_out(kgC/day)		*/
+	/*	Final column (always): sediment_out(kg/day)              */
 	/*--------------------------------------------------------------*/
 
 	if (command_line[0].grow_flag > 0) {
-		fprintf(outfile, "%d %d %d %d %lf %lf %lf %lf %lf %lf %lf %lf %lf\n",
+		fprintf(outfile, "%d %d %d %d %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf\n",
 			date.day,
 			date.month,
 			date.year,
@@ -67,9 +68,10 @@ void	output_stream_routing(
 			stream_network[0].NO3_out,
 			stream_network[0].NH4_out,
 			stream_network[0].DON_out,
-			stream_network[0].DOC_out);
+			stream_network[0].DOC_out,
+			stream_network[0].sediment_out);
 	} else {
-		fprintf(outfile, "%d %d %d %d %lf %lf %lf %lf %lf\n", 
+		fprintf(outfile, "%d %d %d %d %lf %lf %lf %lf %lf %lf\n", 
 			date.day,
 			date.month,
 			date.year,
@@ -78,7 +80,8 @@ void	output_stream_routing(
 			stream_network[0].previous_lateral_input * stream_network[0].length * 86400,
 			stream_network[0].previous_Qin * 86400,
 			stream_network[0].water_depth,
-			stream_network[0].reservoir.initial_storage/10000);
+			stream_network[0].reservoir.initial_storage/10000,
+			stream_network[0].sediment_out);
 	}
 
 	return;

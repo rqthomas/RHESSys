@@ -370,5 +370,11 @@ void  update_drainage_stream(
 		patch[0].hourly_sur2stream_flow += Qout;
 		}
 
+	/* export all remaining surface sediment from stream patch to streamflow */
+	if (patch[0].surface_sediment > 0.0) {
+		patch[0].streamflow_sediment += patch[0].surface_sediment;
+		patch[0].surface_sediment = 0.0;
+		}
+
 } /*end update_drainage_stream.c*/
 

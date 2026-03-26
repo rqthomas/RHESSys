@@ -402,6 +402,12 @@ void		patch_daily_F(
 		struct	patch_object *);
 	
 	void treat_patch(struct patch_object *);
+
+	void compute_sediment_detachment(
+		struct patch_object *,
+		struct zone_object *,
+		struct command_line_object *);
+
 	/*--------------------------------------------------------------*/
 	/*  Local variable definition.                                  */
 	/*--------------------------------------------------------------*/
@@ -2547,6 +2553,11 @@ void		patch_daily_F(
 if ( command_line[0].verbose_flag == -5 ){
 	printf("\n***END PATCH DAILY: exfil_unsat=%lf",patch[0].exfiltration_unsat_zone);
 }
+
+	/*--------------------------------------------------------------*/
+	/* Compute daily sediment detachment and transport capacity.    */
+	/*--------------------------------------------------------------*/
+	compute_sediment_detachment(patch, zone, command_line);
 
 	return;
 } /*end patch_daily_F.c*/

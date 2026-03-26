@@ -167,6 +167,9 @@ void compute_subsurface_routing(struct command_line_object *command_line,
 		else
 			patch[0].S = patch[0].unsat_storage / patch[0].sat_deficit;
 
+		/* zero-initialise sediment routing fields each timestep */
+		patch[0].streamflow_sediment = 0.0;
+
 		if (grow_flag > 0) {
 			patch[0].soil_ns.NO3_Qin = 0.0;
 			patch[0].soil_ns.NO3_Qout = 0.0;

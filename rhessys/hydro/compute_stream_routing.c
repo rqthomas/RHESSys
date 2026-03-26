@@ -82,6 +82,7 @@ double  compute_stream_routing(struct command_line_object *command_line,
     double lateral_input_flow,streamflow;
 	double Qout,Qin,previous_lateral_input,length,initial_flow,sum;
 	double lateral_NO3, lateral_NH4, lateral_DON, lateral_DOC;
+	double lateral_sediment;
 	
 
 	struct patch_object *patch;
@@ -101,6 +102,7 @@ double  compute_stream_routing(struct command_line_object *command_line,
 		lateral_NH4 = 0.0;
 		lateral_DON = 0.0;
 		lateral_DOC = 0.0;
+		lateral_sediment = 0.0;
 		Qout=0.0;
 		Qin=0.0;
 		previous_lateral_input=0.0;
@@ -117,6 +119,7 @@ double  compute_stream_routing(struct command_line_object *command_line,
 				   lateral_DON += patch[0].streamflow_DON * patch[0].area;
 				   lateral_DOC += patch[0].streamflow_DOC * patch[0].area;
 			   }
+			   lateral_sediment += patch[0].streamflow_sediment * patch[0].area; /* kg/day */
 			}
 		   
 	
@@ -188,6 +191,9 @@ double count this way */
 			stream_network[i].DON_in = 0.0;
 			stream_network[i].DOC_in = 0.0;
 		}
+		/* sediment: simple conservative pass-through */
+		stream_network[i].sediment_out = stream_network[i].sediment_in + lateral_sediment;
+		stream_network[i].sediment_in  = 0.0;
 		
         /*calulate income flow  for downstream neighbours */
 	     for (j=0; j< stream_network[i].num_downstream_neighbours; j++) {
@@ -201,6 +207,7 @@ double count this way */
 						stream_network[k].DON_in += stream_network[i].DON_out / stream_network[i].num_downstream_neighbours;
 						stream_network[k].DOC_in += stream_network[i].DOC_out / stream_network[i].num_downstream_neighbours;
 					}
+					stream_network[k].sediment_in += stream_network[i].sediment_out / stream_network[i].num_downstream_neighbours;
 					break;			
 	}	
 	}
