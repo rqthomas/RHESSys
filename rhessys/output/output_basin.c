@@ -60,6 +60,7 @@ void	output_basin(			int routing_flag,
 	double astreamflow;
 	double asublimation, acanopysubl;
 	double asat_area, adetention_store;
+	double astreamflow_sediment;
 	double apsn, anppcum, alai, acrain, acsnow;
 	double abase_flow, hbase_flow,  hstreamflow_NO3, hstreamflow_NH4;
 	double	aacctrans, var_acctrans, var_trans;
@@ -130,6 +131,7 @@ void	output_basin(			int routing_flag,
     atavg = 0.0;
     avpd = 0.0;
     asnow = 0.0;
+	astreamflow_sediment = 0.0;
 	
 	agpsn=0.0;
 	aresp=0.0;
@@ -231,8 +233,7 @@ void	output_basin(			int routing_flag,
 					asat_area += patch[0].area;
 				if (routing_flag == 1) {
 					if (patch[0].drainage_type == STREAM  )  
-						astreamflow += patch[0].streamflow*patch[0].area;
-						areturn_flow += patch[0].return_flow * patch[0].area;
+						astreamflow += patch[0].streamflow*patch[0].area;							astreamflow_sediment += patch[0].streamflow_sediment * patch[0].area;						areturn_flow += patch[0].return_flow * patch[0].area;
 						abase_flow += patch[0].base_flow * patch[0].area;
 				}
 				else {
@@ -354,6 +355,7 @@ void	output_basin(			int routing_flag,
 	alitter_cap /= aarea;
 	atranspiration /= aarea  ;
 	astreamflow /= aarea;
+	astreamflow_sediment /= aarea;
 	apsn /= aarea ;
 	anppcum /= aarea ;
 	alai /= aarea;
@@ -425,7 +427,7 @@ void	output_basin(			int routing_flag,
 	var_acctrans /= aarea;
 				
 
-	fprintf(outfile,"%d %d %d %d %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf\n",
+	fprintf(outfile,"%d %d %d %d %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf\n",
 		date.day,
 		date.month,
 		date.year,
@@ -501,7 +503,8 @@ void	output_basin(			int routing_flag,
 		aLE_snow,
 		acLstar,
 		acdrip*1000,
-		acga*1000
+		acga*1000,
+		astreamflow_sediment
 		);
 	return;
 } /*end output_basin*/

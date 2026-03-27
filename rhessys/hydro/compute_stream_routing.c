@@ -95,6 +95,8 @@ double  compute_stream_routing(struct command_line_object *command_line,
 	dt=86400.0;
 	streamflow=0.0;
 	sum=0.0;
+
+	fprintf(stderr, "num_reaches: %d\n", num_reaches);
 	for (i = 0; i < num_reaches; i++) {
 	/* calculate total lateral input from patches */
 	   lateral_input_flow = 0.0;
@@ -211,7 +213,16 @@ double count this way */
 					break;			
 	}	
 	}
+
+		fprintf(stderr,
+			"[stream_sediment_flux] reach=%d  lateral_in=%.6f kg/day  reach_in=%.6f kg/day  sediment_out=%.6f kg/day\n",
+			stream_network[i].reach_ID,
+			lateral_sediment,
+			stream_network[i].sediment_in,   /* already reset to 0 above, so log before reset next iter */
+			stream_network[i].sediment_out);
 	}
+
+
  
     	streamflow=stream_network[num_reaches-1].Qout;
 	return(streamflow);

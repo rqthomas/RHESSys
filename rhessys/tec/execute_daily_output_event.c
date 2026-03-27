@@ -90,17 +90,23 @@ void execute_daily_output_event(struct world_object *world,
 			fprintf(stderr, "output_filter_output_daily failed with error: %s\n", of_error);
 			exit(EXIT_FAILURE);
 		}
+		fprintf(stderr, "output_filter_output_daily succeeded.\n");
 	} else if (command_line[0].legacy_output_flag) {
 		/*----------------------------------------------------------------------*/
 		/*  Handle legacy output: Make up the prefix for the output files.      */
 		/*----------------------------------------------------------------------*/
+		
 
 		/*--------------------------------------------------------------*/
 		/*	output stream_routing												*/
 		/*--------------------------------------------------------------*/
 		for (b = 0; b < world[0].num_basin_files; ++b) {
+			
 			for (s = 0; s < world[0].basins[b][0].stream_list.num_reaches;
 					++s) {
+
+				
+
 				/*--------------------------------------------------------------*/
 				/*	Construct the stream output files.							*/
 				/*--------------------------------------------------------------*/
@@ -108,6 +114,7 @@ void execute_daily_output_event(struct world_object *world,
 					reachID = command_line[0].stro->reachID;
 					if ((world[0].basins[b][0].stream_list.stream_network[s].reach_ID
 							== reachID) || (reachID == -999)) {
+
 						output_stream_routing(
 								&(world[0].basins[b]->stream_list.stream_network[s]),
 							command_line, date, outfile->stream_routing->daily);

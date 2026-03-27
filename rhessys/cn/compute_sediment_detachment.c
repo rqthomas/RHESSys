@@ -61,8 +61,13 @@ void compute_sediment_detachment(
 
     /* Detachment adds to the surface sediment pool [kg/m2]  */
     rainsplash = KE
-        * patch[0].soil_defaults[0][0].soil_erodibility_K
+        * 1.0
+        /** patch[0].soil_defaults[0][0].soil_erodibility_K */
         * C_factor;
+
+    /*fprintf(stderr, "rain_mm: %lf mm/day, KE: %lf MJ/m2/day,C_factor: %lf, soil_erodibility_K: %lf, rainsplash: %lf kg/m2/day\n",
+        rain_mm, KE, C_factor, patch[0].soil_defaults[0][0].soil_erodibility_K, rainsplash);
+    */
 
     patch[0].surface_sediment += rainsplash;
 

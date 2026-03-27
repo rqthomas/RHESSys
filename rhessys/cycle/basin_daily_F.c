@@ -121,6 +121,7 @@ void	basin_daily_F(
 	/*  For stream routing option - route water between patches within     */
 	/*      the basin                                               */
 	/*--------------------------------------------------------------*/
+
     	if ( command_line[0].stream_routing_flag == 1) {
 		 basin[0].stream_list.streamflow=compute_stream_routing(command_line,
 			basin[0].stream_list.stream_network,

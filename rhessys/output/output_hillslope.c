@@ -56,6 +56,7 @@ void	output_hillslope(				int basinID,
 	double atranspiration;
 	double astreamflow;
 	double abase_flow;
+	double astreamflow_sediment;
 	double apsn, alai;
 	double u20, au20; 
 	double aarea;
@@ -79,6 +80,7 @@ void	output_hillslope(				int basinID,
 	atranspiration = 0.0  ;
 	astreamflow = 0.0;
 	abase_flow = 0.0;
+	astreamflow_sediment = 0.0;
 	apsn = 0.0 ;
 	alai = 0.0;
 	aarea =  0.0 ;
@@ -110,6 +112,7 @@ void	output_hillslope(				int basinID,
 				+ patch[0].transpiration_unsat_zone)  *  patch[0].area;
 			if (patch[0].drainage_type == STREAM)  {
 				astreamflow += patch[0].streamflow*patch[0].area;
+				astreamflow_sediment += patch[0].streamflow_sediment * patch[0].area;
 			}
 			for ( layer=0 ; layer<patch[0].num_layers; layer++ ){
 				for ( c=0 ; c<patch[0].layers[layer].count; c++ ){
@@ -137,6 +140,7 @@ void	output_hillslope(				int basinID,
 	asnowpack /= aarea  ;
 	atranspiration /= aarea  ;
 	astreamflow /= aarea;
+	astreamflow_sediment /= aarea;
 	apsn /= aarea ;
 	alai /= aarea ;
 	au20 /= aarea;
@@ -144,7 +148,7 @@ void	output_hillslope(				int basinID,
 	abase_flow += hillslope[0].base_flow;
 
 
-	fprintf(outfile,"%d %d %d %d %d %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf\n",
+	fprintf(outfile,"%d %d %d %d %d %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf\n",
 		date.day,
 		date.month,
 		date.year,
@@ -167,7 +171,8 @@ void	output_hillslope(				int basinID,
 		alai,
 		hillslope[0].gw.Qout *1000.0,
 		hillslope[0].gw.storage *1000.0,
-		hillslope[0].area
+		hillslope[0].area,
+		astreamflow_sediment
 		);
 	return;
 } /*end output_hillslope*/
