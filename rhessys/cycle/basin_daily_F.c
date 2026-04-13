@@ -70,7 +70,8 @@ void	basin_daily_F(
 	double	compute_stream_routing(
 		struct command_line_object *,
 		struct stream_network_object *,
-		int, struct	date);
+		int, struct	date,
+		double, double);
 
 	void	update_basin_patch_accumulator(
 		struct command_line_object *command_line,
@@ -126,7 +127,9 @@ void	basin_daily_F(
 		 basin[0].stream_list.streamflow=compute_stream_routing(command_line,
 			basin[0].stream_list.stream_network,
 			basin[0].stream_list.num_reaches,
-                        current_date);
+                        current_date,
+			basin[0].area,
+			basin[0].latitude);
 	}
 
 	/*--------------------------------------------------------------*/

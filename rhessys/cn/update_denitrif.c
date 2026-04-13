@@ -17,6 +17,7 @@
 /*			double					*/
 /*			double					*/
 /*			double					*/
+/*			double  denitrif_proportion (DIM) 0-1	*/
 /*                              )                               */
 /*  OPTIONS                                                     */
 /*                                                              */
@@ -50,7 +51,8 @@ int update_denitrif(
 					struct ndayflux_patch_struct *ndf,
 					struct  soil_class   soil_type,
 					double  theta,
-					double std)
+					double std,
+					double denitrif_proportion)
 {
 	/*------------------------------------------------------*/
 	/*	Local Function Declarations.						*/
@@ -121,7 +123,7 @@ int update_denitrif(
 		/*--------------------------------------------------------------*/
 		/*	estimate denitrification				*/
 		/*--------------------------------------------------------------*/
-		denitrify = min(fCO2, fnitrate) * water_scalar;
+		denitrify = denitrif_proportion * min(fCO2, fnitrate) * water_scalar;
 	} /* end mineralized N available */
 	else
 		denitrify = 0.0;

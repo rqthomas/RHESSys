@@ -36,6 +36,9 @@
 #include <stdio.h>
 #include "rhessys.h"
 #include <math.h>
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 
 
 
@@ -47,7 +50,9 @@
 double  compute_stream_routing(struct command_line_object *command_line,
 						 struct stream_network_object *stream_network,
 						 int  num_reaches,
-						 struct	date	current_date)
+						 struct	date	current_date,
+						 double basin_area,
+						 double basin_latitude)
 {
 	/*--------------------------------------------------------------*/
 	/*	Local function definition.				*/
@@ -96,7 +101,18 @@ double  compute_stream_routing(struct command_line_object *command_line,
 	streamflow=0.0;
 	sum=0.0;
 
-	fprintf(stderr, "num_reaches: %d\n", num_reaches);
+	/* Scale patch areas to m² if the worldfile stores them in geographic degrees².
+	   Worldfiles generated from rasters in geographic CRS (lat/lon) store area in
+	   degrees², not m². All internal ratio-based calculations are unit-invariant,
+	   but stream routing divides by a physical stream length (m), so patch areas
+	   must be in m². If basin_area < 1.0, assume degrees²: 1 degree² at latitude φ
+	   ≈ (111320 m)² × cos(φ) m². */
+	double area_scale = 1.0;
+	if (basin_area < 1.0 && basin_latitude != 0.0) {
+		double lat_rad = basin_latitude * M_PI / 180.0;
+		area_scale = 111320.0 * 111320.0 * cos(lat_rad);
+	}
+
 	for (i = 0; i < num_reaches; i++) {
 	/* calculate total lateral input from patches */
 	   lateral_input_flow = 0.0;
@@ -110,21 +126,32 @@ double  compute_stream_routing(struct command_line_object *command_line,
 		previous_lateral_input=0.0;
 		length=0.0;
 		initial_flow=0.0;
+		/* guard: ensure length > 0 before dividing by it below */
+		if(stream_network[i].length <= 0) stream_network[i].length = 1.0;
 	   for (j=0; j <stream_network[i].num_lateral_inputs; j++) {
 	            patch=stream_network[i].lateral_inputs[j];
-		   if (patch[0].drainage_type == STREAM  ){
-	      		lateral_input_flow += (patch[0].streamflow)*patch[0].area/dt/(stream_network[i].length); //unit:m2/s
-			   sum+= (patch[0].streamflow)*patch[0].area;
+			/* Accept all patches explicitly listed as lateral inputs in the stream
+			   network table.  When the subsurface flow table (-r) is used, only
+			   STREAM-drainage patches carry non-zero streamflow so LAND patches
+			   contribute nothing.  When topmodel routing is used (no -r flag) all
+			   patches have streamflow set to their return_flow by top_model(), so
+			   the drainage_type guard would incorrectly exclude every patch and
+			   produce Qout = 0 for every reach. */
+	      		lateral_input_flow += (patch[0].streamflow)*patch[0].area*area_scale/dt/(stream_network[i].length); //unit:m2/s
+			   sum+= (patch[0].streamflow)*patch[0].area*area_scale;
 			   if (command_line[0].grow_flag > 0) {
-				   lateral_NO3 += patch[0].streamflow_NO3 * patch[0].area; /* kg N/day */
-				   lateral_NH4 += patch[0].streamflow_NH4 * patch[0].area;
-				   lateral_DON += patch[0].streamflow_DON * patch[0].area;
-				   lateral_DOC += patch[0].streamflow_DOC * patch[0].area;
+				   if (i == 0 && j < 5) fprintf(stderr,"NUT_DBG j=%d NO3=%g NH4=%g DON=%g DOC=%g sf=%g area=%g\n",
+					   j, patch[0].streamflow_NO3, patch[0].streamflow_NH4,
+					   patch[0].streamflow_DON, patch[0].streamflow_DOC,
+					   patch[0].streamflow, patch[0].area);
+				   lateral_NO3 += patch[0].streamflow_NO3 * patch[0].area * area_scale; /* kg N/day */
+				   lateral_NH4 += patch[0].streamflow_NH4 * patch[0].area * area_scale;
+				   lateral_DON += patch[0].streamflow_DON * patch[0].area * area_scale;
+				   lateral_DOC += patch[0].streamflow_DOC * patch[0].area * area_scale;
 			   }
-			   lateral_sediment += patch[0].streamflow_sediment * patch[0].area; /* kg/day */
-			}
-		   
-	
+			   lateral_sediment += patch[0].streamflow_sediment * patch[0].area * area_scale; /* kg/day */
+
+
 	}
 
 /* for now turn off routing of deep groundwater because we don't know how to allocate across reaches and will
@@ -214,12 +241,6 @@ double count this way */
 	}	
 	}
 
-		fprintf(stderr,
-			"[stream_sediment_flux] reach=%d  lateral_in=%.6f kg/day  reach_in=%.6f kg/day  sediment_out=%.6f kg/day\n",
-			stream_network[i].reach_ID,
-			lateral_sediment,
-			stream_network[i].sediment_in,   /* already reset to 0 above, so log before reset next iter */
-			stream_network[i].sediment_out);
 	}
 
 

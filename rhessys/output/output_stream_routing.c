@@ -55,7 +55,7 @@ void	output_stream_routing(
 	/*--------------------------------------------------------------*/
 
 	if (command_line[0].grow_flag > 0) {
-		fprintf(outfile, "%d %d %d %d %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf\n",
+		fprintf(outfile, "%d %d %d %d %lf %lf %lf %lf %lf %e %e %e %e %e\n",
 			date.day,
 			date.month,
 			date.year,

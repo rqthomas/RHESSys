@@ -63,7 +63,7 @@ int update_nitrif(
 				  double soilT,
 				  double porosity,
 				  double organic_soil_depth,
-				  double nitrif_prop, 
+				  double nitrif_proportion, 
 				  double std)
 {
 	/*------------------------------------------------------*/
@@ -152,7 +152,7 @@ int update_nitrif(
 		/* 	by scaling a maximum rate suggested by Parton et al.		*/
 		/*--------------------------------------------------------------*/
 		
-		nitrify = nitrif_prop * water_scalar * T_scalar * N_scalar * pH_scalar * MAX_RATE * ns_soil->sminn * 1000.0; 
+		nitrify = nitrif_proportion * water_scalar * T_scalar * N_scalar * pH_scalar * MAX_RATE * ns_soil->sminn * 1000.0; 
 
 	} /* end mineralized N available */
 	else

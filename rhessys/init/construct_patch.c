@@ -236,8 +236,10 @@ struct patch_object *construct_patch(
 	patch[0].snowpack.height = patch[0].snowpack.water_equivalent_depth *10.0;
 	patch[0].tmp = 0.0;
 	patch[0].detention_store = 0.0;
-	patch[0].soil_ns.DON = 0.0;
-	patch[0].soil_cs.DOC = 0.0;
+	patch[0].soil_ns.DON =
+		      getDoubleWorldfile(&paramCnt,&paramPtr,"soil_ns.DON","%lf",0.0,1);
+	patch[0].soil_cs.DOC =
+		      getDoubleWorldfile(&paramCnt,&paramPtr,"soil_cs.DOC","%lf",0.0,1);
 
 	/*--------------------------------------------------------------*/
 	/*      initialize accumulator variables for this patch         */

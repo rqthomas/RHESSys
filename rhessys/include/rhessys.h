@@ -1272,7 +1272,7 @@ struct	soil_default
 	double  NO3_adsorption_rate;				/* kg /kg soil */
 	double  NH4_adsorption_rate;				/* kg /kg soil */
 	double  denitrif_proportion;				/* (DIM) 0-1 */
-	double  nitrif_prop;					/* (DIM) scales maximum nitrification rate */
+	double  nitrif_proportion;				/* (DIM) 0-1, scales maximum nitrification rate */
 	double	DON_production_rate;					/* (DIM) 0-1 */
 	double	gl_c;						/* m/s */
 	double	gsurf_slope;					/* (DIM) */

@@ -526,11 +526,6 @@ void compute_subsurface_routing(struct command_line_object *command_line,
 						patch[0].surface_sediment -= (excess
 									/ patch[0].detention_store)
 									* patch[0].surface_sediment;
-						fprintf(stderr,
-							"[sediment_routing STREAM] patch=%d detention_store=%.6f excess=%.6f "
-							"streamflow_sediment=%.6f surface_sediment_remaining=%.6f\n",
-							patch[0].ID, patch[0].detention_store, excess,
-							patch[0].streamflow_sediment, patch[0].surface_sediment);
 						patch[0].return_flow += excess;
 						patch[0].detention_store -= excess;
 						patch[0].Qout_total += excess;
@@ -597,13 +592,6 @@ void compute_subsurface_routing(struct command_line_object *command_line,
 											/ patch[0].detention_store)
 											* patch[0].surface_sediment
 											* patch[0].area / neigh[0].area;
-								fprintf(stderr,
-									"[sediment_routing LAND->STREAM] patch=%d neigh=%d Qout=%.6f "
-									"sed_sent=%.6f neigh_streamflow_sediment=%.6f\n",
-									patch[0].ID, neigh[0].ID, Qout,
-									(Qout / patch[0].detention_store) * patch[0].surface_sediment
-										* patch[0].area / neigh[0].area,
-									neigh[0].streamflow_sediment);
 							} else {
 								neigh[0].Qin_total += Qout * patch[0].area
 										/ neigh[0].area;
@@ -626,14 +614,6 @@ void compute_subsurface_routing(struct command_line_object *command_line,
 											/ patch[0].detention_store)
 											* patch[0].surface_sediment
 											* patch[0].area / neigh[0].area;
-								fprintf(stderr,
-									"[sediment_routing LAND->LAND] patch=%d neigh=%d Qout=%.6f "
-									"sed_sent=%.6f neigh_surface_sediment=%.6f\n",
-									patch[0].ID, neigh[0].ID, Qout,
-									(Qout / patch[0].detention_store) * patch[0].surface_sediment
-										* patch[0].area / neigh[0].area,
-									neigh[0].surface_sediment);
-
 							}
 						}
 						if (grow_flag > 0) {
@@ -659,10 +639,6 @@ void compute_subsurface_routing(struct command_line_object *command_line,
 						patch[0].surface_sediment -= (excess
 									/ patch[0].detention_store)
 									* patch[0].surface_sediment;
-						fprintf(stderr,
-							"[sediment_routing LAND deduct] patch=%d excess=%.6f "
-							"surface_sediment_remaining=%.6f\n",
-							patch[0].ID, excess, patch[0].surface_sediment);
 						patch[0].detention_store -= excess;
 						patch[0].Qout_total += excess;
 					}
