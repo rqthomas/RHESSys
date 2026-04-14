@@ -140,10 +140,6 @@ double  compute_stream_routing(struct command_line_object *command_line,
 	      		lateral_input_flow += (patch[0].streamflow)*patch[0].area*area_scale/dt/(stream_network[i].length); //unit:m2/s
 			   sum+= (patch[0].streamflow)*patch[0].area*area_scale;
 			   if (command_line[0].grow_flag > 0) {
-				   if (i == 0 && j < 5) fprintf(stderr,"NUT_DBG j=%d NO3=%g NH4=%g DON=%g DOC=%g sf=%g area=%g\n",
-					   j, patch[0].streamflow_NO3, patch[0].streamflow_NH4,
-					   patch[0].streamflow_DON, patch[0].streamflow_DOC,
-					   patch[0].streamflow, patch[0].area);
 				   lateral_NO3 += patch[0].streamflow_NO3 * patch[0].area * area_scale; /* kg N/day */
 				   lateral_NH4 += patch[0].streamflow_NH4 * patch[0].area * area_scale;
 				   lateral_DON += patch[0].streamflow_DON * patch[0].area * area_scale;
@@ -154,16 +150,24 @@ double  compute_stream_routing(struct command_line_object *command_line,
 
 	}
 
-/* for now turn off routing of deep groundwater because we don't know how to allocate across reaches and will
-double count this way */
-/*
+	/* Route hillslope GW base_flow through the kinematic wave stream network.
+	   hillslope[0].base_flow holds gw.Qout (deep groundwater discharge) when
+	   routing_flag==1. Without this, GW appears in basin.daily$streamflow but
+	   is invisible to stream routing - the two outputs become disconnected.
+	   Apply the same area_scale used for patches so that geographic-CRS worldfiles
+	   (where areas are stored in degrees²) are correctly converted to m².
+	   Also route associated nutrient loads (kgN/m2/day × m2 = kg/day). */
 		for (j=0; j <stream_network[i].num_neighbour_hills; j++) {
 			hillslope=stream_network[i].neighbour_hill[j];
-			lateral_input_flow += (hillslope[0].base_flow)*hillslope[0].area/dt/(stream_network[i].length); //unit:m2/s
-			sum+= (hillslope[0].base_flow)*hillslope[0].area;
-						
+			lateral_input_flow += (hillslope[0].base_flow)*hillslope[0].area*area_scale/dt/(stream_network[i].length); //unit:m2/s
+			sum+= (hillslope[0].base_flow)*hillslope[0].area*area_scale;
+			if (command_line[0].grow_flag > 0) {
+				lateral_NO3 += hillslope[0].streamflow_NO3 * hillslope[0].area * area_scale; /* kg N/day */
+				lateral_NH4 += hillslope[0].streamflow_NH4 * hillslope[0].area * area_scale;
+				lateral_DON += hillslope[0].streamflow_DON * hillslope[0].area * area_scale;
+				lateral_DOC += hillslope[0].streamflow_DOC * hillslope[0].area * area_scale;
+			}
 		}
-*/
           
 	   /*calulate alfa from manning conductivity, wetperimeter, and streamslope*/
            if(stream_network[i].stream_slope <=0 ) stream_network[i].stream_slope=0.01;

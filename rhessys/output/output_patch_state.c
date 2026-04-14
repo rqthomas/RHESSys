@@ -162,6 +162,10 @@ void	output_patch_state(
 	  fprintf(outfile,"\n          ");
 	  fprintf(outfile,"%-30.8f %s",patch[0].shadow_soil_cs->soil4c, "soil_cs.soil4c");
 	  fprintf(outfile,"\n          ");
+	  fprintf(outfile,"%-30.8f %s",patch[0].shadow_soil_ns->DON, "soil_ns.DON");
+	  fprintf(outfile,"\n          ");
+	  fprintf(outfile,"%-30.8f %s",patch[0].shadow_soil_cs->DOC, "soil_cs.DOC");
+	  fprintf(outfile,"\n          ");
   }
   else{
       fprintf(outfile,"%-30.8f %s",patch[0].litter_cs.litr1c, "litter_cs.litr1c");
@@ -195,6 +199,10 @@ void	output_patch_state(
 	  fprintf(outfile,"%-30.8f %s",patch[0].soil_cs.soil3c, "soil_cs.soil3c");
 	  fprintf(outfile,"\n          ");
 	  fprintf(outfile,"%-30.8f %s",patch[0].soil_cs.soil4c, "soil_cs.soil4c");
+	  fprintf(outfile,"\n          ");
+	  fprintf(outfile,"%-30.8f %s",patch[0].soil_ns.DON, "soil_ns.DON");
+	  fprintf(outfile,"\n          ");
+	  fprintf(outfile,"%-30.8f %s",patch[0].soil_cs.DOC, "soil_cs.DOC");
 	  fprintf(outfile,"\n          ");
   }
 
