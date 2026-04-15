@@ -222,8 +222,6 @@ int allocate_annual_growth(				int id,
 
 
 	if (((total_store < epc.cpool_mort_fract*total_biomass) || (cs->cpool < ZERO))  && (cs->age > epc.mort_start_age) && (vmort_flag == 1)) {
-		printf("\n drought stress mortality for %d", id);
-
 		if (epc.cpool_mort_fract*total_biomass > ZERO)
 			excess_carbon = 1.0 - total_store/(epc.cpool_mort_fract*total_biomass);
 		else
@@ -491,8 +489,6 @@ int allocate_annual_growth(				int id,
 
 	if ((cdf->leafc_store_to_leafc_transfer + cs->leafc) <= epc.min_leaf_carbon) {
 		if (cs->num_resprout < epc.max_years_resprout) {
-
-		printf("\n Resprouting stratum %d", id);
 
 		/*cs->stem_density = epc.resprout_stem_density;*/
 		cs->mortality_fract = 1.0;

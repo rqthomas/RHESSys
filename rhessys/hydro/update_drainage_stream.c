@@ -31,6 +31,7 @@
 /*											*/
 /*--------------------------------------------------------------*/
 #include <stdio.h>
+#include <math.h>
 #include "rhessys.h"
 
 
@@ -107,6 +108,7 @@ void  update_drainage_stream(
 	double gamma, total_gamma, percent_tobe_routed;
 	double Nin, Nout;  /* kg/m2 */
 	double t1,t2,t3;
+	double flow_frac, transport_cap, sed_out; /* sediment routing */
 	
 	d=0;
 	route_to_stream = 0.0;
@@ -365,15 +367,19 @@ void  update_drainage_stream(
 		Nout = (min(1.0, Qout / patch[0].detention_store)) * patch[0].surface_NH4;
 		patch[0].surface_NH4  -= Nout;
 		patch[0].streamflow_NH4 += Nout;
+		/* Fix 1: export sediment proportional to overland flow fraction
+		   Fix 2: cap export by transport capacity (Tc = c * Qout^1.5 kg/m2/day) */
+		if (patch[0].surface_sediment > 0.0) {
+			flow_frac = min(1.0, Qout / patch[0].detention_store);
+			transport_cap = patch[0].soil_defaults[0][0].sediment_transport_capacity_c
+							* pow(Qout, 1.5);
+			sed_out = min(flow_frac * patch[0].surface_sediment, transport_cap);
+			patch[0].streamflow_sediment += sed_out;
+			patch[0].surface_sediment    -= sed_out;
+		}
 		patch[0].detention_store -= Qout;
 		patch[0].return_flow += Qout; 
 		patch[0].hourly_sur2stream_flow += Qout;
-		}
-
-	/* export all remaining surface sediment from stream patch to streamflow */
-	if (patch[0].surface_sediment > 0.0) {
-		patch[0].streamflow_sediment += patch[0].surface_sediment;
-		patch[0].surface_sediment = 0.0;
 		}
 
 } /*end update_drainage_stream.c*/

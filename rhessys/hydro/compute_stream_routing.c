@@ -36,9 +36,6 @@
 #include <stdio.h>
 #include "rhessys.h"
 #include <math.h>
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
 
 
 
@@ -50,9 +47,7 @@
 double  compute_stream_routing(struct command_line_object *command_line,
 						 struct stream_network_object *stream_network,
 						 int  num_reaches,
-						 struct	date	current_date,
-						 double basin_area,
-						 double basin_latitude)
+						 struct	date	current_date)
 {
 	/*--------------------------------------------------------------*/
 	/*	Local function definition.				*/
@@ -101,18 +96,6 @@ double  compute_stream_routing(struct command_line_object *command_line,
 	streamflow=0.0;
 	sum=0.0;
 
-	/* Scale patch areas to m² if the worldfile stores them in geographic degrees².
-	   Worldfiles generated from rasters in geographic CRS (lat/lon) store area in
-	   degrees², not m². All internal ratio-based calculations are unit-invariant,
-	   but stream routing divides by a physical stream length (m), so patch areas
-	   must be in m². If basin_area < 1.0, assume degrees²: 1 degree² at latitude φ
-	   ≈ (111320 m)² × cos(φ) m². */
-	double area_scale = 1.0;
-	if (basin_area < 1.0 && basin_latitude != 0.0) {
-		double lat_rad = basin_latitude * M_PI / 180.0;
-		area_scale = 111320.0 * 111320.0 * cos(lat_rad);
-	}
-
 	for (i = 0; i < num_reaches; i++) {
 	/* calculate total lateral input from patches */
 	   lateral_input_flow = 0.0;
@@ -137,15 +120,15 @@ double  compute_stream_routing(struct command_line_object *command_line,
 			   patches have streamflow set to their return_flow by top_model(), so
 			   the drainage_type guard would incorrectly exclude every patch and
 			   produce Qout = 0 for every reach. */
-	      		lateral_input_flow += (patch[0].streamflow)*patch[0].area*area_scale/dt/(stream_network[i].length); //unit:m2/s
-			   sum+= (patch[0].streamflow)*patch[0].area*area_scale;
+	      		lateral_input_flow += (patch[0].streamflow)*patch[0].area/dt/(stream_network[i].length); //unit:m2/s
+			   sum+= (patch[0].streamflow)*patch[0].area;
 			   if (command_line[0].grow_flag > 0) {
-				   lateral_NO3 += patch[0].streamflow_NO3 * patch[0].area * area_scale; /* kg N/day */
-				   lateral_NH4 += patch[0].streamflow_NH4 * patch[0].area * area_scale;
-				   lateral_DON += patch[0].streamflow_DON * patch[0].area * area_scale;
-				   lateral_DOC += patch[0].streamflow_DOC * patch[0].area * area_scale;
+				   lateral_NO3 += patch[0].streamflow_NO3 * patch[0].area; /* kg N/day */
+				   lateral_NH4 += patch[0].streamflow_NH4 * patch[0].area;
+				   lateral_DON += patch[0].streamflow_DON * patch[0].area;
+				   lateral_DOC += patch[0].streamflow_DOC * patch[0].area;
 			   }
-			   lateral_sediment += patch[0].streamflow_sediment * patch[0].area * area_scale; /* kg/day */
+			   lateral_sediment += patch[0].streamflow_sediment * patch[0].area; /* kg/day */
 
 
 	}
@@ -154,18 +137,16 @@ double  compute_stream_routing(struct command_line_object *command_line,
 	   hillslope[0].base_flow holds gw.Qout (deep groundwater discharge) when
 	   routing_flag==1. Without this, GW appears in basin.daily$streamflow but
 	   is invisible to stream routing - the two outputs become disconnected.
-	   Apply the same area_scale used for patches so that geographic-CRS worldfiles
-	   (where areas are stored in degrees²) are correctly converted to m².
-	   Also route associated nutrient loads (kgN/m2/day × m2 = kg/day). */
+	   Route associated nutrient loads (kgN/m2/day × m2 = kg/day). */
 		for (j=0; j <stream_network[i].num_neighbour_hills; j++) {
 			hillslope=stream_network[i].neighbour_hill[j];
-			lateral_input_flow += (hillslope[0].base_flow)*hillslope[0].area*area_scale/dt/(stream_network[i].length); //unit:m2/s
-			sum+= (hillslope[0].base_flow)*hillslope[0].area*area_scale;
+			lateral_input_flow += (hillslope[0].base_flow)*hillslope[0].area/dt/(stream_network[i].length); //unit:m2/s
+			sum+= (hillslope[0].base_flow)*hillslope[0].area;
 			if (command_line[0].grow_flag > 0) {
-				lateral_NO3 += hillslope[0].streamflow_NO3 * hillslope[0].area * area_scale; /* kg N/day */
-				lateral_NH4 += hillslope[0].streamflow_NH4 * hillslope[0].area * area_scale;
-				lateral_DON += hillslope[0].streamflow_DON * hillslope[0].area * area_scale;
-				lateral_DOC += hillslope[0].streamflow_DOC * hillslope[0].area * area_scale;
+				lateral_NO3 += hillslope[0].streamflow_NO3 * hillslope[0].area; /* kg N/day */
+				lateral_NH4 += hillslope[0].streamflow_NH4 * hillslope[0].area;
+				lateral_DON += hillslope[0].streamflow_DON * hillslope[0].area;
+				lateral_DOC += hillslope[0].streamflow_DOC * hillslope[0].area;
 			}
 		}
           

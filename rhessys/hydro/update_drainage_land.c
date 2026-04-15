@@ -114,6 +114,7 @@ void  update_drainage_land(
 	double NH4_leached_to_surface; /* kg/m2 */
 	double DON_leached_to_surface; /* kg/m2 */
 	double DOC_leached_to_surface; /* kg/m2 */
+	double sed_leached_to_surface; /* kg */
 	double N_leached_total; /* kg/m2 */
 	double DON_leached_total; /* kg/m2 */
 	double DOC_leached_total; /* kg/m2 */
@@ -143,6 +144,7 @@ void  update_drainage_land(
 	NH4_leached_to_surface = 0.0;
 	DOC_leached_to_surface = 0.0;
 	DON_leached_to_surface = 0.0;
+	sed_leached_to_surface = 0.0;
 	/*--------------------------------------------------------------*/
 	/*	m and K are multiplied by sensitivity analysis variables */
 	/*--------------------------------------------------------------*/
@@ -427,6 +429,12 @@ void  update_drainage_land(
 			NH4_leached_to_surface = Nout * patch[0].area;
 			patch[0].surface_NH4 -= Nout;
 			}
+		/* route sediment proportional to overland flow */
+		if (patch[0].surface_sediment > 0.0) {
+			double flow_frac = min(1.0, Qout / patch[0].detention_store);
+			sed_leached_to_surface = flow_frac * patch[0].surface_sediment * patch[0].area;
+			patch[0].surface_sediment -= flow_frac * patch[0].surface_sediment;
+			}
 		route_to_surface = (Qout *  patch[0].area);
 		patch[0].detention_store -= Qout;
 		patch[0].surface_Qout += Qout;
@@ -504,6 +512,15 @@ void  update_drainage_land(
 			neigh[0].surface_DON += Nin;
 			Nin = (patch[0].surface_innundation_list[d].neighbours[j].gamma * DOC_leached_to_surface) / neigh[0].area;
 			neigh[0].surface_DOC += Nin;
+			}
+		/* route sediment to neighbour: STREAM type -> streamflow_sediment; LAND type -> surface_sediment */
+		if (sed_leached_to_surface > 0.0) {
+			double sed_to_neigh = (patch[0].surface_innundation_list[d].neighbours[j].gamma
+				* sed_leached_to_surface) / neigh[0].area;
+			if (neigh[0].drainage_type == STREAM)
+				neigh[0].streamflow_sediment += sed_to_neigh;
+			else
+				neigh[0].surface_sediment += sed_to_neigh;
 			}
 		/*--------------------------------------------------------------*/
 		/*	- now surface water 					*/
