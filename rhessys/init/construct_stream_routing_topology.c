@@ -129,6 +129,8 @@ struct stream_list_object construct_stream_routing_topology(
 	
 		/* initializations */
 		stream_network_ini[i].initial_flow=0.0;
+		stream_network_ini[i].water_depth=0.0;
+		stream_network_ini[i].reservoir.initial_storage=0.0;
 		stream_network_ini[i].previous_lateral_input=0.0;
 		stream_network_ini[i].previous_Qin=0.0;
 		stream_network_ini[i].Qin=0.0;
@@ -141,6 +143,10 @@ struct stream_list_object construct_stream_routing_topology(
 		stream_network_ini[i].NH4_out=0.0;
 		stream_network_ini[i].DON_out=0.0;
 		stream_network_ini[i].DOC_out=0.0;
+		stream_network_ini[i].lateral_NO3=0.0;
+		stream_network_ini[i].lateral_NH4=0.0;
+		stream_network_ini[i].lateral_DON=0.0;
+		stream_network_ini[i].lateral_DOC=0.0;
 		stream_network_ini[i].sediment_in=0.0;
 		stream_network_ini[i].sediment_out=0.0;
 	

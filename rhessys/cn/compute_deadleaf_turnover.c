@@ -50,7 +50,8 @@ int	compute_deadleaf_turnover(
 	double c1,c2,c3,c4;
 	double n1,n2,n3,n4;
 	double turnover;
-	turnover = epv->day_deadleaf_turnover;
+	/* cannot turn over more dead leaf than there is */
+	turnover = min(epv->day_deadleaf_turnover, cs->dead_leafc);
 	c1 = turnover * epc.leaflitr_flab;
 	c2 = turnover * epc.leaflitr_fucel;
 	n2 = turnover * epc.leaflitr_fucel/CEL_CN;

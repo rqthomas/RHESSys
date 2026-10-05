@@ -158,6 +158,11 @@ struct zone_object *construct_zone(
 	zone[0].precip_lapse_rate = getDoubleWorldfile(&paramCnt,&paramPtr,"precip_lapse_rate","%lf",1.0,1);
 	zone[0].e_horizon = getDoubleWorldfile(&paramCnt,&paramPtr,"e_horizon","%lf",-9999,0);
 	zone[0].w_horizon = getDoubleWorldfile(&paramCnt,&paramPtr,"w_horizon","%lf",-9999,0);
+	/* running means carried between days; defaults are the cold-start values */
+	zone[0].metv.tsoil_sum = getDoubleWorldfile(&paramCnt,&paramPtr,"metv.tsoil_sum","%lf",0.0,1);
+	zone[0].metv.tmin_ravg = getDoubleWorldfile(&paramCnt,&paramPtr,"metv.tmin_ravg","%lf",3.0,1);
+	zone[0].metv.vpd_ravg = getDoubleWorldfile(&paramCnt,&paramPtr,"metv.vpd_ravg","%lf",900,1);
+	zone[0].metv.dayl_ravg = getDoubleWorldfile(&paramCnt,&paramPtr,"metv.dayl_ravg","%lf",38000,1);
 	zone[0].num_base_stations = getIntWorldfile(&paramCnt,&paramPtr,"zone_n_basestations","%d",0,0);	
 	/*--------------------------------------------------------------*/
 	/* check for negative horizons - these may occur if using a GIS function that is computing topographic rather than */
@@ -392,11 +397,7 @@ struct zone_object *construct_zone(
 	/* on air temperatures on that day - which we don't know at this point */
 	/*--------------------------------------------------------------*/
 	zone[0].metv.pa	= atm_pres( zone[0].z );
-	zone[0].metv.tsoil_sum = 0.0;
 	zone[0].metv.tsoil = 0.0;
-	zone[0].metv.tmin_ravg = 3.0;
-	zone[0].metv.vpd_ravg = 900;
-	zone[0].metv.dayl_ravg = 38000;
 
 	/*--------------------------------------------------------------*/
 	/*	Construct the intervals in this zone.						*/

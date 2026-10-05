@@ -322,6 +322,21 @@
 	/*--------------------------------------------------------------*/
 	/*	Read in the number of  patch base stations 					*/
 	/*--------------------------------------------------------------*/
+	/* surface pools added to the state file for exact restart */
+	ltmp = getDoubleWorldfile(&paramCnt,&paramPtr,"detention_store","%lf",patch[0].detention_store,1);
+	if (fabs(ltmp - NULLVAL) >= ZERO)  patch[0].detention_store = ltmp;
+	ltmp = getDoubleWorldfile(&paramCnt,&paramPtr,"surface_NO3","%lf",patch[0].surface_NO3,1);
+	if (fabs(ltmp - NULLVAL) >= ZERO)  patch[0].surface_NO3 = ltmp;
+	ltmp = getDoubleWorldfile(&paramCnt,&paramPtr,"surface_NH4","%lf",patch[0].surface_NH4,1);
+	if (fabs(ltmp - NULLVAL) >= ZERO)  patch[0].surface_NH4 = ltmp;
+	ltmp = getDoubleWorldfile(&paramCnt,&paramPtr,"surface_DOC","%lf",patch[0].surface_DOC,1);
+	if (fabs(ltmp - NULLVAL) >= ZERO)  patch[0].surface_DOC = ltmp;
+	ltmp = getDoubleWorldfile(&paramCnt,&paramPtr,"surface_DON","%lf",patch[0].surface_DON,1);
+	if (fabs(ltmp - NULLVAL) >= ZERO)  patch[0].surface_DON = ltmp;
+	ltmp = getDoubleWorldfile(&paramCnt,&paramPtr,"surface_sediment","%lf",patch[0].surface_sediment,1);
+	if (fabs(ltmp - NULLVAL) >= ZERO)  patch[0].surface_sediment = ltmp;
+	ltmp = getDoubleWorldfile(&paramCnt,&paramPtr,"litter.NO3_stored","%lf",patch[0].litter.NO3_stored,1);
+	if (fabs(ltmp - NULLVAL) >= ZERO)  patch[0].litter.NO3_stored = ltmp;
 	dtmp = getIntWorldfile(&paramCnt,&paramPtr,"patch_n_basestations","%d",patch[0].num_base_stations,0);
 	if (dtmp > 0)  {
 		patch[0].num_base_stations = dtmp;

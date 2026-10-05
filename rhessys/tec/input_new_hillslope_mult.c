@@ -99,6 +99,12 @@ void input_new_hillslope_mult(
 	if (fabs(ltmp - NULLVAL) >= ZERO)  hillslope[0].gw.storage = ltmp * hillslope[0].gw.storage;
 	ltmp = getDoubleWorldfile(&paramCnt,&paramPtr,"gw.NO3","%lf",1,1);	
 	if (fabs(ltmp - NULLVAL) >= ZERO)  hillslope[0].gw.NO3 = ltmp * hillslope[0].gw.NO3;
+	ltmp = getDoubleWorldfile(&paramCnt,&paramPtr,"gw.NH4","%lf",1,1);
+	if (fabs(ltmp - NULLVAL) >= ZERO)  hillslope[0].gw.NH4 = ltmp * hillslope[0].gw.NH4;
+	ltmp = getDoubleWorldfile(&paramCnt,&paramPtr,"gw.DON","%lf",1,1);
+	if (fabs(ltmp - NULLVAL) >= ZERO)  hillslope[0].gw.DON = ltmp * hillslope[0].gw.DON;
+	ltmp = getDoubleWorldfile(&paramCnt,&paramPtr,"gw.DOC","%lf",1,1);
+	if (fabs(ltmp - NULLVAL) >= ZERO)  hillslope[0].gw.DOC = ltmp * hillslope[0].gw.DOC;
 
 	dtmp = getIntWorldfile(&paramCnt,&paramPtr,"hillslope_n_basestations","%d",1,1);	
 	

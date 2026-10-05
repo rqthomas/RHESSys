@@ -54,7 +54,7 @@ int compute_annual_turnover(
 			+ cs->livecrootc_transfer + cs->livecrootc_store)
 			* epc.livewood_turnover	/ 365;
 	}
-	if (epc.veg_type == GRASS)
+	if ((epc.veg_type == GRASS) || (epc.veg_type == C4GRASS))
 		epv->day_deadleaf_turnover = epc.deadleaf_turnover
 		* (cs->dead_leafc ) / 365;
 

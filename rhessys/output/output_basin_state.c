@@ -54,26 +54,26 @@ void	output_basin_state(
 
 	printf("\n Beginning basin output state");
 	fprintf(outfile,"\n   ");
-	fprintf(outfile,"%-30ld %s",basin[0].ID, "basin_ID");
+	fprintf(outfile,"%-30d %s",basin[0].ID, "basin_ID");
 	fprintf(outfile,"\n   ");
-	fprintf(outfile,"%-30.8f %s",basin[0].x, "x");
+	fprintf(outfile,"%-30.17g %s",basin[0].x, "x");
 	fprintf(outfile,"\n   ");
-	fprintf(outfile,"%-30.8f %s",basin[0].y, "y");
+	fprintf(outfile,"%-30.17g %s",basin[0].y, "y");
 	fprintf(outfile,"\n   ");
-	fprintf(outfile,"%-30.8f %s",basin[0].z, "z");
+	fprintf(outfile,"%-30.17g %s",basin[0].z, "z");
 	fprintf(outfile,"\n   ");
-	fprintf(outfile,"%-30ld %s",basin[0].defaults[0][0].ID, "basin_parm_ID");
+	fprintf(outfile,"%-30d %s",basin[0].defaults[0][0].ID, "basin_parm_ID");
 	fprintf(outfile,"\n   ");
-	fprintf(outfile,"%-30.8f %s",basin[0].latitude, "latitude");
+	fprintf(outfile,"%-30.17g %s",basin[0].latitude, "latitude");
 	fprintf(outfile,"\n   ");
-	fprintf(outfile,"%-30ld %s",basin[0].num_base_stations, "basin_n_basestations");
+	fprintf(outfile,"%-30d %s",basin[0].num_base_stations, "basin_n_basestations");
 	for (i=0; i < basin[0].num_base_stations; i++){
 		fprintf(outfile,"\n   ");
-		fprintf(outfile,"%-30ld %s",basin[0].base_stations[i][0].ID,
+		fprintf(outfile,"%-30d %s",basin[0].base_stations[i][0].ID,
 			"basin_basestation_ID");
 	}
 	fprintf(outfile,"\n   ");
-	fprintf(outfile,"%-30ld %s",basin[0].num_hillslopes, "num_hillslopes");
+	fprintf(outfile,"%-30d %s",basin[0].num_hillslopes, "num_hillslopes");
 	/*--------------------------------------------------------------*/
 	/*	output hillslopes 											*/
 	/*--------------------------------------------------------------*/

@@ -618,7 +618,7 @@ void add_headers(struct world_output_file_object *world_output_files,
 		
         outfile = world_output_files[0].stream_routing[0].daily;
 		if (command_line[0].grow_flag > 0) {
-			fprintf(outfile, "%s %s %s %s %s %s %s %s %s %s %s %s %s %s\n",
+			fprintf(outfile, "%s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s\n",
 					"day",
 					"month",
 					"year",
@@ -632,7 +632,11 @@ void add_headers(struct world_output_file_object *world_output_files,
 					"NH4_out",
 					"DON_out",
 					"DOC_out",
-					"sediment_out");
+					"sediment_out",
+					"lateral_NO3",
+					"lateral_NH4",
+					"lateral_DON",
+					"lateral_DOC");
 		} else {
 			fprintf(outfile, "%s %s %s %s %s %s %s %s %s %s\n",
 					"day",

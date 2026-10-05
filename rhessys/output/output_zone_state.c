@@ -55,36 +55,44 @@ void	output_zone_state(
 	/*	output zone information									*/
 	/*--------------------------------------------------------------*/
 	fprintf(outfile,"\n       ");
-	fprintf(outfile,"%-30ld %s",zone[0].ID, "zone_ID");
+	fprintf(outfile,"%-30d %s",zone[0].ID, "zone_ID");
 	fprintf(outfile,"\n       ");
-	fprintf(outfile,"%-30.8f %s",zone[0].x, "x");
+	fprintf(outfile,"%-30.17g %s",zone[0].x, "x");
 	fprintf(outfile,"\n       ");
-	fprintf(outfile,"%-30.8f %s",zone[0].y, "y");
+	fprintf(outfile,"%-30.17g %s",zone[0].y, "y");
 	fprintf(outfile,"\n       ");
-	fprintf(outfile,"%-30.8f %s",zone[0].z, "z");
+	fprintf(outfile,"%-30.17g %s",zone[0].z, "z");
 	fprintf(outfile,"\n       ");
-	fprintf(outfile,"%-30ld %s",zone[0].defaults[0][0].ID, "zone_parm_ID");
+	fprintf(outfile,"%-30d %s",zone[0].defaults[0][0].ID, "zone_parm_ID");
 	fprintf(outfile,"\n       ");
-	fprintf(outfile,"%-30.8f %s",zone[0].area, "area");
+	fprintf(outfile,"%-30.17g %s",zone[0].area, "area");
 	fprintf(outfile,"\n       ");
-	fprintf(outfile,"%-30.8f %s",zone[0].slope / DtoR, "slope");
+	fprintf(outfile,"%-30.17g %s",zone[0].slope / DtoR, "slope");
 	fprintf(outfile,"\n       ");
-	fprintf(outfile,"%-30.8f %s",zone[0].aspect / DtoR, "aspect");
+	fprintf(outfile,"%-30.17g %s",zone[0].aspect / DtoR, "aspect");
 	fprintf(outfile,"\n       ");
-	fprintf(outfile,"%-30.8f %s",zone[0].precip_lapse_rate, "precip_lapse_rate");
+	fprintf(outfile,"%-30.17g %s",zone[0].precip_lapse_rate, "precip_lapse_rate");
 	fprintf(outfile,"\n       ");
-	fprintf(outfile,"%-30.8f %s",zone[0].e_horizon, "e_horizon");
+	fprintf(outfile,"%-30.17g %s",zone[0].e_horizon, "e_horizon");
 	fprintf(outfile,"\n       ");
-	fprintf(outfile,"%-30.8f %s",zone[0].w_horizon, "w_horizon");
+	fprintf(outfile,"%-30.17g %s",zone[0].w_horizon, "w_horizon");
 	fprintf(outfile,"\n       ");
-	fprintf(outfile,"%-30ld %s",zone[0].num_base_stations, "zone_n_basestations");
+	fprintf(outfile,"%-30.17g %s",zone[0].metv.tsoil_sum, "metv.tsoil_sum");
+	fprintf(outfile,"\n       ");
+	fprintf(outfile,"%-30.17g %s",zone[0].metv.tmin_ravg, "metv.tmin_ravg");
+	fprintf(outfile,"\n       ");
+	fprintf(outfile,"%-30.17g %s",zone[0].metv.vpd_ravg, "metv.vpd_ravg");
+	fprintf(outfile,"\n       ");
+	fprintf(outfile,"%-30.17g %s",zone[0].metv.dayl_ravg, "metv.dayl_ravg");
+	fprintf(outfile,"\n       ");
+	fprintf(outfile,"%-30d %s",zone[0].num_base_stations, "zone_n_basestations");
 	for (i=0; i < zone[0].num_base_stations; i++){
 		fprintf(outfile,"\n       ");
-		fprintf(outfile,"%-30ld %s",zone[0].base_stations[i][0].ID,
+		fprintf(outfile,"%-30d %s",zone[0].base_stations[i][0].ID,
 			"zone_basestation_ID");
 	}
 	fprintf(outfile,"\n       ");
-	fprintf(outfile,"%-30ld %s",zone[0].num_patches, "num_patches");
+	fprintf(outfile,"%-30d %s",zone[0].num_patches, "num_patches");
 	/*--------------------------------------------------------------*/
 	/*	output patchs 											*/
 	/*--------------------------------------------------------------*/

@@ -530,6 +530,10 @@ double NO3_out; /* kg N/day - total load leaving reach outlet */
 double NH4_out; /* kg N/day */
 double DON_out; /* kg N/day */
 double DOC_out; /* kg C/day */
+double lateral_NO3; /* kg N/day - load from lateral input patches and neighbour hillslopes */
+double lateral_NH4; /* kg N/day */
+double lateral_DON; /* kg N/day */
+double lateral_DOC; /* kg C/day */
 double sediment_in;  /* kg/day - sediment received from upstream + lateral */
 double sediment_out; /* kg/day - sediment leaving reach outlet */
 };

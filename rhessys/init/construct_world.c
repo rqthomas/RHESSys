@@ -362,6 +362,7 @@ struct world_object *construct_world(struct command_line_object *command_line){
 	struct spinup_default *construct_spinup_defaults(int, char **, struct command_line_object *); 
 	struct base_station_object *construct_base_station(char *,
 		struct date, struct date, int);
+	void	read_stream_routing_state(struct world_object *, FILE *);
 	struct basin_object *construct_basin(struct command_line_object *, FILE *, int *, 
 		struct base_station_object **, struct default_object *, 
         struct base_station_ncheader_object *,
@@ -906,6 +907,12 @@ printf("about to enter construct wui\n");
             world[0].base_station_ncheader,
             world);
 	} /*end for*/
+
+	/*--------------------------------------------------------------*/
+	/*	Restore stream reach routing state saved after the basins	*/
+	/*--------------------------------------------------------------*/
+	if (command_line[0].stream_routing_flag == 1)
+		read_stream_routing_state(world, world_file);
 
 	/*--------------------------------------------------------------*/
 	/*	If spinup flag is set construct the spinup thresholds object*/

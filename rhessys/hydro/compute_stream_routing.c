@@ -200,6 +200,10 @@ double  compute_stream_routing(struct command_line_object *command_line,
 			stream_network[i].NH4_out = stream_network[i].NH4_in + lateral_NH4;
 			stream_network[i].DON_out = stream_network[i].DON_in + lateral_DON;
 			stream_network[i].DOC_out = stream_network[i].DOC_in + lateral_DOC;
+			stream_network[i].lateral_NO3 = lateral_NO3;
+			stream_network[i].lateral_NH4 = lateral_NH4;
+			stream_network[i].lateral_DON = lateral_DON;
+			stream_network[i].lateral_DOC = lateral_DOC;
 			stream_network[i].NO3_in = 0.0;
 			stream_network[i].NH4_in = 0.0;
 			stream_network[i].DON_in = 0.0;

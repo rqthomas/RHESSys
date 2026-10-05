@@ -1309,7 +1309,7 @@ void		patch_daily_F(
 	/*	soil each day - we used 66% based on fertilizer experiments 	*/
 	/*	Agronomy Guide 1989-1990 pg 17, Penn State web site fact sheet */
 	/*--------------------------------------------------------------*/
-	FERT_TO_SOIL = 100;
+	FERT_TO_SOIL = 0.66;
 	if (patch[0].fertilizer_NH4 > ZERO) {
 		surfaceN_to_soil = FERT_TO_SOIL * patch[0].fertilizer_NH4;
 		patch[0].fertilizer_NH4 -= surfaceN_to_soil;

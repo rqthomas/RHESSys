@@ -38,6 +38,9 @@ void	execute_state_output_event(
 	/*--------------------------------------------------------------*/
 	/*	Local function definition.									*/
 	/*--------------------------------------------------------------*/
+	void output_stream_routing_state(
+		struct	world_object *,
+		FILE	*);
 	void output_basin_state(
 		struct	basin_object *,
 		struct	date,
@@ -75,9 +78,9 @@ void	execute_state_output_event(
 		exit(EXIT_FAILURE);
 	}
 
-	fprintf(outfile, "\n%-30ld %s", world[0].ID,
+	fprintf(outfile, "\n%-30d %s", world[0].ID,
 		"world_ID");
-	fprintf(outfile, "\n%-30ld %s", world[0].num_basin_files,
+	fprintf(outfile, "\n%-30d %s", world[0].num_basin_files,
 		"num_basins");
 	/*--------------------------------------------------------------*/
 	/*	output basins												*/
@@ -87,6 +90,8 @@ void	execute_state_output_event(
 		output_basin_state(world[0].basins[b], current_date, command_line, outfile);
         printf("output basin state finished\n");
 	}
+	if (command_line[0].stream_routing_flag == 1)
+		output_stream_routing_state(world, outfile);
 	fclose(outfile);
     printf("output basin state file closed\n");
 	return;

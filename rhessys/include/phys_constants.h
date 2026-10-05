@@ -55,8 +55,8 @@ Iribane, J.V. and W.L. Godson, 1981.  Atmospheric Thermodynamics. 2nd
 #define NUM_VAR_BASIN 17
 #define NUM_VAR_HILLSLOPE 18
 #define NUM_VAR_ZONE 22
-#define NUM_VAR_PATCH 47
-#define NUM_VAR_STRATA 71 
+#define NUM_VAR_PATCH 80
+#define NUM_VAR_STRATA 96 
 
 
 

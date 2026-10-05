@@ -181,6 +181,10 @@ void input_new_strata_mult(
 	  if (fabs(ltmp - NULLVAL) >= ONE) canopy_strata[0].cs.cwdc = ltmp * canopy_strata[0].cs.cwdc;
 	ltmp = getDoubleWorldfile(&paramCnt,&paramPtr,"cs.cwdc_bg","%lf",1,1);
 	  if (fabs(ltmp - NULLVAL) >= ONE) canopy_strata[0].cs.cwdc_bg = ltmp * canopy_strata[0].cs.cwdc_bg;
+	ltmp = getDoubleWorldfile(&paramCnt,&paramPtr,"cs.gresp_store","%lf",1,1);
+	  if (fabs(ltmp - NULLVAL) >= ONE) canopy_strata[0].cs.gresp_store = ltmp * canopy_strata[0].cs.gresp_store;
+	ltmp = getDoubleWorldfile(&paramCnt,&paramPtr,"cs.gresp_transfer","%lf",1,1);
+	  if (fabs(ltmp - NULLVAL) >= ONE) canopy_strata[0].cs.gresp_transfer = ltmp * canopy_strata[0].cs.gresp_transfer;
 	ltmp = getDoubleWorldfile(&paramCnt,&paramPtr,"epv.prev_leafcalloc","%lf",1,1);
 	  if (fabs(ltmp - NULLVAL) >= ONE) canopy_strata[0].epv.prev_leafcalloc = ltmp * canopy_strata[0].epv.prev_leafcalloc;
 	ltmp = getDoubleWorldfile(&paramCnt,&paramPtr,"ns.npool","%lf",1,1);

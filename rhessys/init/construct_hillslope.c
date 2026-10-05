@@ -116,6 +116,9 @@ struct hillslope_object *construct_hillslope(
 	hillslope[0].hill_parm_ID = getIntWorldfile(&paramCnt,&paramPtr,"hill_parm_ID","%d",-9999,0);
 	hillslope[0].gw.storage = getDoubleWorldfile(&paramCnt,&paramPtr,"gw.storage","%lf",0.0,1);
 	hillslope[0].gw.NO3 = getDoubleWorldfile(&paramCnt,&paramPtr,"gw.NO3","%lf",0.0,1);
+	hillslope[0].gw.NH4 = getDoubleWorldfile(&paramCnt,&paramPtr,"gw.NH4","%lf",0.0,1);
+	hillslope[0].gw.DON = getDoubleWorldfile(&paramCnt,&paramPtr,"gw.DON","%lf",0.0,1);
+	hillslope[0].gw.DOC = getDoubleWorldfile(&paramCnt,&paramPtr,"gw.DOC","%lf",0.0,1);
 	hillslope[0].num_base_stations = getIntWorldfile(&paramCnt,&paramPtr,"hillslope_n_basestations","%d",0,0);
 	hillslope[0].streamflow_NO3 = 0.0;	
 	hillslope[0].streamflow_NH4 = 0.0;	
@@ -182,9 +185,6 @@ struct hillslope_object *construct_hillslope(
 	hillslope[0].streamflow_NH4 = 0.0;
 	hillslope[0].streamflow_DON = 0.0;
 	hillslope[0].streamflow_DOC = 0.0;
-	hillslope[0].gw.DON = 0.0;
-	hillslope[0].gw.DOC = 0.0;
-	hillslope[0].gw.NH4 = 0.0;
 	/*--------------------------------------------------------------*/
 	/*	Construct the zones in this hillslope.						*/
 	/*	and calculate hillslope area								*/

@@ -90,6 +90,7 @@ struct patch_object *construct_patch(
 	int		i, rec;
 	int		fire_default_object_ID;
 	int		surface_energy_default_object_ID;
+	double	ltmp;
 	char		record[MAXSTR];
 	struct patch_object *patch;
 	int paramCnt=0;
@@ -145,6 +146,9 @@ struct patch_object *construct_patch(
 
 	fire_default_object_ID=getIntWorldfile(&paramCnt,&paramPtr,"fire_parm_ID", "%d", -9999,1);
 	surface_energy_default_object_ID=getIntWorldfile(&paramCnt,&paramPtr,"surface_energy_default_object_ID", "%d", -9999,1);
+	/* state files write this ID as surface_energy_parm_ID */
+	if (surface_energy_default_object_ID == -9999)
+		surface_energy_default_object_ID=getIntWorldfile(&paramCnt,&paramPtr,"surface_energy_parm_ID", "%d", -9999,1);
 	patch[0].area = getDoubleWorldfile(&paramCnt,&paramPtr,"area","%lf",-9999,0);
 	patch[0].slope = getDoubleWorldfile(&paramCnt,&paramPtr,"slope","%lf",-9999,0);
 	patch[0].lna  = getDoubleWorldfile(&paramCnt,&paramPtr,"lna","%lf",7,1);
@@ -235,7 +239,7 @@ struct patch_object *construct_patch(
 	patch[0].streamflow_NO3 = 0.0;
 	patch[0].snowpack.height = patch[0].snowpack.water_equivalent_depth *10.0;
 	patch[0].tmp = 0.0;
-	patch[0].detention_store = 0.0;
+	patch[0].detention_store = getDoubleWorldfile(&paramCnt,&paramPtr,"detention_store","%lf",0.0,1);
 	patch[0].soil_ns.DON =
 		      getDoubleWorldfile(&paramCnt,&paramPtr,"soil_ns.DON","%lf",0.0,1);
 	patch[0].soil_cs.DOC =
@@ -274,7 +278,7 @@ struct patch_object *construct_patch(
 	patch[0].acc_year.burn = 0.0;
 	patch[0].acc_year.pcp = 0.0;
 	patch[0].acc_year.snowin = 0.0;
-	patch[0].acc_year_trans = 0.0;
+	patch[0].acc_year_trans = getDoubleWorldfile(&paramCnt,&paramPtr,"acc_year_trans","%lf",0.0,1);
 	patch[0].acc_year.trans = 0.0;
 	patch[0].acc_year.maxtrans = 0.0;
 	patch[0].acc_year.day7trans = 0.0;
@@ -352,6 +356,28 @@ struct patch_object *construct_patch(
 	patch[0].soil_ns.soil2n = patch[0].soil_cs.soil2c / SOIL2_CN;
 	patch[0].soil_ns.soil3n = patch[0].soil_cs.soil3c / SOIL3_CN;
 	patch[0].soil_ns.soil4n = patch[0].soil_cs.soil4c / SOIL4_CN;
+	/* N pools saved in a state file replace the fixed C:N values; */
+	/* a missing value or -9999 keeps the fixed C:N value */
+	ltmp = getDoubleWorldfile(&paramCnt,&paramPtr,"litter_ns.litr2n","%lf",NULLVAL,1);
+	if (fabs(ltmp - NULLVAL) >= 1.0) patch[0].litter_ns.litr2n = ltmp;
+	ltmp = getDoubleWorldfile(&paramCnt,&paramPtr,"litter_ns.litr3n","%lf",NULLVAL,1);
+	if (fabs(ltmp - NULLVAL) >= 1.0) patch[0].litter_ns.litr3n = ltmp;
+	ltmp = getDoubleWorldfile(&paramCnt,&paramPtr,"litter_ns.litr4n","%lf",NULLVAL,1);
+	if (fabs(ltmp - NULLVAL) >= 1.0) patch[0].litter_ns.litr4n = ltmp;
+	ltmp = getDoubleWorldfile(&paramCnt,&paramPtr,"litter_ns.litr2n_bg","%lf",NULLVAL,1);
+	if (fabs(ltmp - NULLVAL) >= 1.0) patch[0].litter_ns.litr2n_bg = ltmp;
+	ltmp = getDoubleWorldfile(&paramCnt,&paramPtr,"litter_ns.litr3n_bg","%lf",NULLVAL,1);
+	if (fabs(ltmp - NULLVAL) >= 1.0) patch[0].litter_ns.litr3n_bg = ltmp;
+	ltmp = getDoubleWorldfile(&paramCnt,&paramPtr,"litter_ns.litr4n_bg","%lf",NULLVAL,1);
+	if (fabs(ltmp - NULLVAL) >= 1.0) patch[0].litter_ns.litr4n_bg = ltmp;
+	ltmp = getDoubleWorldfile(&paramCnt,&paramPtr,"soil_ns.soil1n","%lf",NULLVAL,1);
+	if (fabs(ltmp - NULLVAL) >= 1.0) patch[0].soil_ns.soil1n = ltmp;
+	ltmp = getDoubleWorldfile(&paramCnt,&paramPtr,"soil_ns.soil2n","%lf",NULLVAL,1);
+	if (fabs(ltmp - NULLVAL) >= 1.0) patch[0].soil_ns.soil2n = ltmp;
+	ltmp = getDoubleWorldfile(&paramCnt,&paramPtr,"soil_ns.soil3n","%lf",NULLVAL,1);
+	if (fabs(ltmp - NULLVAL) >= 1.0) patch[0].soil_ns.soil3n = ltmp;
+	ltmp = getDoubleWorldfile(&paramCnt,&paramPtr,"soil_ns.soil4n","%lf",NULLVAL,1);
+	if (fabs(ltmp - NULLVAL) >= 1.0) patch[0].soil_ns.soil4n = ltmp;
 
 	/*--------------------------------------------------------------*/
 	/*	initialize sinks				                                   	*/
@@ -375,15 +401,31 @@ struct patch_object *construct_patch(
 	patch[0].soil_ns.nfix_src = 0.0;
 	patch[0].soil_ns.ndep_src = 0.0;
 	patch[0].soil_ns.nleached_snk = 0.0;
-	patch[0].soil_ns.nvolatilized_snk = 0.0;
+	patch[0].soil_ns.nvolatilized_snk = getDoubleWorldfile(&paramCnt,&paramPtr,"soil_ns.nvolatilized_snk","%lf",0.0,1);
+	/* decomposition scalars and family horizon are used the next day before they are recomputed */
+	patch[0].litter_cs.t_scalar = getDoubleWorldfile(&paramCnt,&paramPtr,"litter_cs.t_scalar","%lf",0.0,1);
+	patch[0].litter_cs.w_scalar = getDoubleWorldfile(&paramCnt,&paramPtr,"litter_cs.w_scalar","%lf",0.0,1);
+	patch[0].litter_cs.t_scalar_bg = getDoubleWorldfile(&paramCnt,&paramPtr,"litter_cs.t_scalar_bg","%lf",0.0,1);
+	patch[0].litter_cs.w_scalar_bg = getDoubleWorldfile(&paramCnt,&paramPtr,"litter_cs.w_scalar_bg","%lf",0.0,1);
+	patch[0].family_horizon = getDoubleWorldfile(&paramCnt,&paramPtr,"family_horizon","%lf",0.0,1);
+	/* soil totals from the end of the previous day, used by update_denitrif */
+	patch[0].soil_cs.totalc = getDoubleWorldfile(&paramCnt,&paramPtr,"soil_cs.totalc","%lf",
+		patch[0].soil_cs.soil1c + patch[0].soil_cs.soil2c + patch[0].soil_cs.soil3c + patch[0].soil_cs.soil4c,1);
+	patch[0].soil_ns.totaln = getDoubleWorldfile(&paramCnt,&paramPtr,"soil_ns.totaln","%lf",
+		patch[0].soil_ns.soil1n + patch[0].soil_ns.soil2n + patch[0].soil_ns.soil3n + patch[0].soil_ns.soil4n
+		+ patch[0].soil_ns.nitrate + patch[0].soil_ns.sminn,1);
 
-	patch[0].litter.NO3_stored = 0.0;
-	patch[0].surface_NO3 = 0.0;
-	patch[0].surface_NH4 = 0.0;
-	patch[0].surface_DOC = 0.0;
-	patch[0].surface_DON = 0.0;
-	patch[0].fertilizer_NO3 = 0.0;
-	patch[0].fertilizer_NH4 = 0.0;
+	/* surface and carry-over state; defaults are the cold-start values */
+	patch[0].litter.NO3_stored = getDoubleWorldfile(&paramCnt,&paramPtr,"litter.NO3_stored","%lf",0.0,1);
+	patch[0].surface_NO3 = getDoubleWorldfile(&paramCnt,&paramPtr,"surface_NO3","%lf",0.0,1);
+	patch[0].surface_NH4 = getDoubleWorldfile(&paramCnt,&paramPtr,"surface_NH4","%lf",0.0,1);
+	patch[0].surface_DOC = getDoubleWorldfile(&paramCnt,&paramPtr,"surface_DOC","%lf",0.0,1);
+	patch[0].surface_DON = getDoubleWorldfile(&paramCnt,&paramPtr,"surface_DON","%lf",0.0,1);
+	patch[0].surface_sediment = getDoubleWorldfile(&paramCnt,&paramPtr,"surface_sediment","%lf",0.0,1);
+	patch[0].fertilizer_NO3 = getDoubleWorldfile(&paramCnt,&paramPtr,"fertilizer_NO3","%lf",0.0,1);
+	patch[0].fertilizer_NH4 = getDoubleWorldfile(&paramCnt,&paramPtr,"fertilizer_NH4","%lf",0.0,1);
+	/* previous day's soil temperature; read before it is set on the first day */
+	patch[0].Tsoil = getDoubleWorldfile(&paramCnt,&paramPtr,"Tsoil","%lf",0.0,1);
 	patch[0].grazing_Closs = 0.0;
 
   /*--------------------------------------------------------------*/
@@ -764,7 +806,7 @@ struct patch_object *construct_patch(
 		patch[0].soil_defaults[0][0].soil_depth,
 		0,
 		-1*patch[0].sat_deficit);
-	patch[0].preday_sat_deficit_z = patch[0].sat_deficit_z;
+	patch[0].preday_sat_deficit_z = getDoubleWorldfile(&paramCnt,&paramPtr,"preday_sat_deficit_z","%lf",patch[0].sat_deficit_z,1);
 
 
 	if(paramPtr!=NULL)

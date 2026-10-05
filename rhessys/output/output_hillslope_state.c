@@ -52,26 +52,32 @@ void	output_hillslope_state(
 	fprintf(outfile,"\n     ");
 	fprintf(outfile,"%-30d %s",hillslope[0].ID, "hillslope_ID");
 	fprintf(outfile,"\n     ");
-	fprintf(outfile,"%-30.8lf %s",hillslope[0].x, "x");
+	fprintf(outfile,"%-30.17g %s",hillslope[0].x, "x");
 	fprintf(outfile,"\n     ");
-	fprintf(outfile,"%-30.8lf %s",hillslope[0].y, "y");
+	fprintf(outfile,"%-30.17g %s",hillslope[0].y, "y");
 	fprintf(outfile,"\n     ");
-	fprintf(outfile,"%-30.8lf %s",hillslope[0].z, "z");
+	fprintf(outfile,"%-30.17g %s",hillslope[0].z, "z");
 	fprintf(outfile,"\n     ");
 	fprintf(outfile,"%-30d %s",hillslope[0].defaults[0][0].ID, "hill_parm_ID");
 	fprintf(outfile,"\n     ");
-	fprintf(outfile,"%-30.8lf %s",hillslope[0].gw.storage, "gw.storage");
+	fprintf(outfile,"%-30.17g %s",hillslope[0].gw.storage, "gw.storage");
 	fprintf(outfile,"\n     ");
-	fprintf(outfile,"%-30.8lf %s",hillslope[0].gw.NO3, "gw.NO3");
+	fprintf(outfile,"%-30.17g %s",hillslope[0].gw.NO3, "gw.NO3");
+	fprintf(outfile,"\n     ");
+	fprintf(outfile,"%-30.17g %s",hillslope[0].gw.NH4, "gw.NH4");
+	fprintf(outfile,"\n     ");
+	fprintf(outfile,"%-30.17g %s",hillslope[0].gw.DON, "gw.DON");
+	fprintf(outfile,"\n     ");
+	fprintf(outfile,"%-30.17g %s",hillslope[0].gw.DOC, "gw.DOC");
 	fprintf(outfile,"\n     ");
 	fprintf(outfile,"%-30d %s",hillslope[0].num_base_stations, "hillslope_n_basestations");
 	for (i=0; i < hillslope[0].num_base_stations; i++){
 		fprintf(outfile,"\n     ");
-		fprintf(outfile,"%-30ld %s",hillslope[0].base_stations[i][0].ID,
+		fprintf(outfile,"%-30d %s",hillslope[0].base_stations[i][0].ID,
 			"hillslope_basestation_ID");
 	}
 	fprintf(outfile,"\n     ");
-	fprintf(outfile,"%-30ld %s",hillslope[0].num_zones, "num_zones");
+	fprintf(outfile,"%-30d %s",hillslope[0].num_zones, "num_zones");
 	/*--------------------------------------------------------------*/
 	/*	output zones 											*/
 	/*--------------------------------------------------------------*/

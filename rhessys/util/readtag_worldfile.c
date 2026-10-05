@@ -33,6 +33,7 @@ param *readtag_worldfile(int *paramCnt, FILE *file,char *key){
     int argCnt;
     param *paramPtr = NULL;
     int num_variables=0;
+    int capacity;
 
     
     /*-----------------------------------------------------------------------------
@@ -56,7 +57,9 @@ param *readtag_worldfile(int *paramCnt, FILE *file,char *key){
     
     
     
-    paramPtr = (param *)malloc(sizeof(param) * (num_variables + 1));
+    /* num_variables is only the initial size; the buffer grows as needed */
+    capacity = num_variables + 1;
+    paramPtr = (param *)malloc(sizeof(param) * capacity);
 
     // Char array that will hold parameter names and values (as strings)
     //FILE *file;
@@ -64,6 +67,14 @@ param *readtag_worldfile(int *paramCnt, FILE *file,char *key){
             // Char array that will hold parameter names and values (as strings)
             (*paramCnt)++;
             paramInd++;
+            if (paramInd >= capacity) {
+                capacity *= 2;
+                paramPtr = (param *)realloc(paramPtr, sizeof(param) * capacity);
+                if (paramPtr == NULL) {
+                    fprintf(stderr, "FATAL ERROR: out of memory reading %s record\n", key);
+                    exit(EXIT_FAILURE);
+                }
+            }
 
             //printf("paramInd: %d\n", paramInd);
 
@@ -89,10 +100,6 @@ param *readtag_worldfile(int *paramCnt, FILE *file,char *key){
 	      break;
 	    }
 	    
-	    if(num_variables < *paramCnt){
-	      printf("num_variables=%d,paramCnt=%d, in level %s\n",num_variables,*paramCnt,key);
-	      fprintf(stderr,"added new parameter, adjust the num_variables in phys_constants.h\n");
-	    }
 
             //printf("\n%d param name: %s value %s", *paramCnt, paramPtr[paramInd].name, paramPtr[paramInd].strVal);
         }

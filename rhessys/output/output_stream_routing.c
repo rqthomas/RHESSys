@@ -51,11 +51,14 @@ void	output_stream_routing(
 	/*	When grow_flag > 0, four additional columns are appended:*/
 	/*	         NO3_out(kgN/day) NH4_out(kgN/day)		*/
 	/*	         DON_out(kgN/day) DOC_out(kgC/day)		*/
-	/*	Final column (always): sediment_out(kg/day)              */
+	/*	Then (always): sediment_out(kg/day)                      */
+	/*	When grow_flag > 0, lateral input loads follow:		*/
+	/*	         lateral_NO3(kgN/day) lateral_NH4(kgN/day)	*/
+	/*	         lateral_DON(kgN/day) lateral_DOC(kgC/day)	*/
 	/*--------------------------------------------------------------*/
 
 	if (command_line[0].grow_flag > 0) {
-		fprintf(outfile, "%d %d %d %d %lf %lf %lf %lf %lf %e %e %e %e %e\n",
+		fprintf(outfile, "%d %d %d %d %lf %lf %lf %lf %lf %e %e %e %e %e %e %e %e %e\n",
 			date.day,
 			date.month,
 			date.year,
@@ -69,7 +72,11 @@ void	output_stream_routing(
 			stream_network[0].NH4_out,
 			stream_network[0].DON_out,
 			stream_network[0].DOC_out,
-			stream_network[0].sediment_out);
+			stream_network[0].sediment_out,
+			stream_network[0].lateral_NO3,
+			stream_network[0].lateral_NH4,
+			stream_network[0].lateral_DON,
+			stream_network[0].lateral_DOC);
 	} else {
 		fprintf(outfile, "%d %d %d %d %lf %lf %lf %lf %lf %lf\n", 
 			date.day,
