@@ -37,6 +37,10 @@
 #include <stdio.h>
 #include <math.h>
 #include "rhessys.h"
+#ifdef N_BUDGET
+double nb_root_unmet = 0.0;   /* kg N/m2 * m2, accumulated in patch_daily_F units */
+double nb_root_unmet_patch = 0.0;
+#endif
 #include "phys_constants.h"
 
 int update_decomp_root(
@@ -161,6 +165,61 @@ int update_decomp_root(
 
 	/* update soild and litter stores */
 	/* Fluxes out of labile litter pool */
+	/*--------------------------------------------------------------*/
+	/* Keep N conserved: immobilising decomposition fluxes cannot   */
+	/* take more mineral N than is available (soil NH4 + NO3 plus   */
+	/* the N mineralised by the other pools in this step). If they  */
+	/* would, scale the immobilising fluxes (C and N) down by the   */
+	/* same factor, as fpi does, instead of crediting the soil pools */
+	/* with immobilised N that is never debited from mineral N      */
+	/* (the guard below used to create that N silently).            */
+	/*--------------------------------------------------------------*/
+	{
+		double immob = 0.0, minrl = 0.0, f;
+		if (ndf->sminn_to_soil1n_l1_bg > 0.0) immob += ndf->sminn_to_soil1n_l1_bg; else minrl -= ndf->sminn_to_soil1n_l1_bg;
+		if (ndf->sminn_to_soil2n_l2_bg > 0.0) immob += ndf->sminn_to_soil2n_l2_bg; else minrl -= ndf->sminn_to_soil2n_l2_bg;
+		if (ndf->sminn_to_soil2n_l3_bg > 0.0) immob += ndf->sminn_to_soil2n_l3_bg; else minrl -= ndf->sminn_to_soil2n_l3_bg;
+		if (ndf->sminn_to_soil3n_l4_bg > 0.0) immob += ndf->sminn_to_soil3n_l4_bg; else minrl -= ndf->sminn_to_soil3n_l4_bg;
+		if ((immob > ZERO) && (immob - minrl > max(ns_soil->sminn, 0.0) + max(ns_soil->nitrate, 0.0))) {
+			f = (max(ns_soil->sminn, 0.0) + max(ns_soil->nitrate, 0.0) + minrl) / immob;
+			f = max(0.0, min(1.0, f));
+			if (ndf->sminn_to_soil1n_l1_bg > 0.0) {
+				cdf->plitr1c_loss_bg *= f;
+				ndf->pmnf_l1s1_bg *= f;
+				cdf->litr1c_hr_bg = rfl1s1 * cdf->plitr1c_loss_bg;
+				cdf->litr1c_to_soil1c_bg = (1.0 - rfl1s1) * cdf->plitr1c_loss_bg;
+				ndf->litr1n_to_soil1n_bg = (ns_litr->litr1n_bg > ZERO) ? cdf->plitr1c_loss_bg / cn_l1 : 0.0;
+				ndf->sminn_to_soil1n_l1_bg = ndf->pmnf_l1s1_bg;
+			}
+			if (ndf->sminn_to_soil2n_l2_bg > 0.0) {
+				cdf->plitr2c_loss_bg *= f;
+				ndf->pmnf_l2s2_bg *= f;
+				cdf->litr2c_hr_bg = rfl2s2 * cdf->plitr2c_loss_bg;
+				cdf->litr2c_to_soil2c_bg = (1.0 - rfl2s2) * cdf->plitr2c_loss_bg;
+				ndf->litr2n_to_soil2n_bg = (ns_litr->litr2n_bg > ZERO) ? cdf->plitr2c_loss_bg / cn_l2 : 0.0;
+				ndf->sminn_to_soil2n_l2_bg = ndf->pmnf_l2s2_bg;
+			}
+			if (ndf->sminn_to_soil2n_l3_bg > 0.0) {
+				cdf->plitr3c_loss_bg *= f;
+				ndf->pmnf_l3l2_bg *= f;
+				cdf->litr3c_hr_bg = rfl4s3 * cdf->plitr3c_loss_bg;
+				cdf->litr3c_to_litr2c_bg = (1.0 - rfl4s3) * cdf->plitr3c_loss_bg;
+				ndf->litr3n_to_litr2n_bg = (ns_litr->litr3n_bg > 0.000000001) ? cdf->plitr3c_loss_bg / cn_l3 : 0.0;
+				ndf->sminn_to_soil2n_l3_bg = ndf->pmnf_l3l2_bg;
+			}
+			if (ndf->sminn_to_soil3n_l4_bg > 0.0) {
+				cdf->plitr4c_loss_bg *= f;
+				ndf->pmnf_l4s3_bg *= f;
+				cdf->litr4c_hr_bg = rfl4s3 * cdf->plitr4c_loss_bg;
+				cdf->litr4c_to_soil3c_bg = (1.0 - rfl4s3) * cdf->plitr4c_loss_bg;
+				ndf->litr4n_to_soil3n_bg = (ns_litr->litr4n_bg > 0.000000001) ? cdf->plitr4c_loss_bg / cn_l4 : 0.0;
+				ndf->sminn_to_soil3n_l4_bg = ndf->pmnf_l4s3_bg;
+			}
+			daily_net_nmin = -1.0 * (ndf->sminn_to_soil1n_l1_bg + ndf->sminn_to_soil2n_l2_bg
+				+ ndf->sminn_to_soil2n_l3_bg + ndf->sminn_to_soil3n_l4_bg);
+		}
+	}
+
 	cs_litr->litr1c_hr_snk_bg += cdf->litr1c_hr_bg; // this related to basin yearly growth add this to output too
 	cs_litr->litr1c_bg       -= cdf->litr1c_hr_bg;
 	if (cs_litr->litr1c_bg - cdf->litr1c_to_soil1c_bg < ZERO) {
@@ -227,6 +286,9 @@ int update_decomp_root(
 			//printf("In update below ground decomp not enough for mineral N will reduce accordingly \n");
 			balance = ns_soil->sminn + ns_soil->nitrate + daily_net_nmin;
 			//printf("\n below ground litter required %lf balance unmet %lf \n", -1.0*daily_net_nmin, balance);
+#ifdef N_BUDGET
+			nb_root_unmet_patch += -balance;   /* N credited to soil but not debited from mineral N */
+#endif
 			daily_net_nmin = -1.0 * (ns_soil->sminn + ns_soil->nitrate);
 
 		}

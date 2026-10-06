@@ -184,6 +184,10 @@ void	handle_event(
 	}
 	else if ( !strcmp(event[0].command,"redefine_world_thin_snags") ){
 		execute_redefine_world_thin_event(world, command_line, current_date, 3);
+	}
+	else if ( !strcmp(event[0].command,"redefine_world_thin_fire_remain") ){
+		/* as thin_remain, but killed tree reserves go to CWD (see update_mortality) */
+		execute_redefine_world_thin_event(world, command_line, current_date, 4);
 	}			
 	else if ( !strcmp(event[0].command,"roads_on") ){
 		command_line[0].road_flag = 1;

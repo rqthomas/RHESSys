@@ -189,6 +189,7 @@ struct tec_object	*construct_tec(
 			(strcmp(command,"redefine_world_thin_remain") != 0) &&
 			(strcmp(command,"redefine_world_thin_harvest") != 0) &&		
 			(strcmp(command,"redefine_world_thin_snags") != 0) &&			
+			(strcmp(command,"redefine_world_thin_fire_remain") != 0) &&
 			(strcmp(command,"roads_on") != 0) &&
 			(strcmp(command,"roads_off") != 0) &&
 			(strcmp(command,"output_current_state") != 0)  ){

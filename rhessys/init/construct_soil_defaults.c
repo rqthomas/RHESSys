@@ -286,6 +286,7 @@ struct soil_default *construct_soil_defaults(
 		default_object_list[i].soil_erodibility_K = getDoubleParam(&paramCnt, &paramPtr, "soil_erodibility_K", "%lf", 0.0, 1);
 		default_object_list[i].sediment_transport_capacity_c = getDoubleParam(&paramCnt, &paramPtr, "sediment_transport_capacity_c", "%lf", 0.0, 1);
 		default_object_list[i].cover_and_management_C = getDoubleParam(&paramCnt, &paramPtr, "cover_and_management_C", "%lf", 0.0, 1);
+		default_object_list[i].cover_canopy_k = getDoubleParam(&paramCnt, &paramPtr, "cover_canopy_k", "%lf", 0.5, 1);
 	
 		/*--------------------------------------------------------------*/
 		/*		Close the ith default file.								*/

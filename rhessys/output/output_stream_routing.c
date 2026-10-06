@@ -55,10 +55,12 @@ void	output_stream_routing(
 	/*	When grow_flag > 0, lateral input loads follow:		*/
 	/*	         lateral_NO3(kgN/day) lateral_NH4(kgN/day)	*/
 	/*	         lateral_DON(kgN/day) lateral_DOC(kgC/day)	*/
+	/*	Last (always): lateral_sediment(kg/day), sediment from	*/
+	/*	         lateral input patches only			*/
 	/*--------------------------------------------------------------*/
 
 	if (command_line[0].grow_flag > 0) {
-		fprintf(outfile, "%d %d %d %d %lf %lf %lf %lf %lf %e %e %e %e %e %e %e %e %e\n",
+		fprintf(outfile, "%d %d %d %d %lf %lf %lf %lf %lf %e %e %e %e %e %e %e %e %e %e\n",
 			date.day,
 			date.month,
 			date.year,
@@ -76,9 +78,10 @@ void	output_stream_routing(
 			stream_network[0].lateral_NO3,
 			stream_network[0].lateral_NH4,
 			stream_network[0].lateral_DON,
-			stream_network[0].lateral_DOC);
+			stream_network[0].lateral_DOC,
+			stream_network[0].lateral_sediment);
 	} else {
-		fprintf(outfile, "%d %d %d %d %lf %lf %lf %lf %lf %lf\n", 
+		fprintf(outfile, "%d %d %d %d %lf %lf %lf %lf %lf %lf %lf\n", 
 			date.day,
 			date.month,
 			date.year,
@@ -88,7 +91,8 @@ void	output_stream_routing(
 			stream_network[0].previous_Qin * 86400,
 			stream_network[0].water_depth,
 			stream_network[0].reservoir.initial_storage/10000,
-			stream_network[0].sediment_out);
+			stream_network[0].sediment_out,
+			stream_network[0].lateral_sediment);
 	}
 
 	return;

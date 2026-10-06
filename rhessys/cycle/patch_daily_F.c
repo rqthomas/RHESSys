@@ -78,6 +78,97 @@
 #include <math.h>
 #include "rhessys.h"
 
+
+#ifdef N_BUDGET
+/*--------------------------------------------------------------*/
+/* Debug N budget (compile with -DN_BUDGET): sums every patch N   */
+/* pool at checkpoints through patch_daily_F and accumulates the  */
+/* area-weighted change per step; written at exit to $NB_FILE    */
+/* (default n_budget.txt). Steps should change N only by the      */
+/* listed external fluxes; anything else is a leak.               */
+/*--------------------------------------------------------------*/
+#define NB_NSEG 11
+#define NB_MAXID 200000
+static double nb_acc[NB_NSEG];
+static double nb_acc_plant[NB_NSEG];
+static double nb_uptake = 0.0;
+extern double nb_root_unmet_patch;
+static double nb_root_unmet_acc = 0.0;
+static double nb_ext_ndep = 0.0, nb_ext_denit = 0.0, nb_ext_gw = 0.0, nb_area_days = 0.0;
+static double nb_prev_end[NB_MAXID];
+static char nb_has_end[NB_MAXID];
+static int nb_registered = 0;
+static const char *nb_lab[NB_NSEG] = {
+	"0 between days (hourly, routing, other patches)",
+	"1 start .. before N deposition (septic, mortality, canopy daily)",
+	"2 N deposition / fertilizer added to surface",
+	"3 surface + hydrology + surface N to soil",
+	"4 resolve competition + plant growth/allocation",
+	"5 soil decomposition (update_decomp, incl. plant uptake debit)",
+	"6 dissolved organic losses",
+	"7 nitrification",
+	"8 denitrification",
+	"9 SWAPPED: root decomposition (update_decomp_root)",
+	"10 after grow block .. end"};
+static double nb_total(struct patch_object *patch)
+{
+	int i;
+	double t = 0.0;
+	for (i = 0; i < patch[0].num_canopy_strata; i++) {
+		struct canopy_strata_object *s = patch[0].canopy_strata[i];
+		struct nstate_struct *n = &(s[0].ns);
+		t += s[0].cover_fraction * (n->npool + n->leafn + n->dead_leafn + n->live_stemn + n->dead_stemn
+			+ n->live_crootn + n->dead_crootn + n->frootn + n->retransn
+			+ n->leafn_transfer + n->livestemn_transfer + n->deadstemn_transfer + n->livecrootn_transfer
+			+ n->deadcrootn_transfer + n->frootn_transfer + n->leafn_store + n->livestemn_store
+			+ n->deadstemn_store + n->livecrootn_store + n->deadcrootn_store + n->frootn_store
+			+ n->cwdn + n->cwdn_bg + s[0].NO3_stored);
+	}
+	t += patch[0].litter_ns.litr1n + patch[0].litter_ns.litr2n + patch[0].litter_ns.litr3n + patch[0].litter_ns.litr4n
+		+ patch[0].litter_ns.litr1n_bg + patch[0].litter_ns.litr2n_bg + patch[0].litter_ns.litr3n_bg
+		+ patch[0].litter_ns.litr4n_bg + patch[0].litter.NO3_stored;
+	t += patch[0].soil_ns.soil1n + patch[0].soil_ns.soil2n + patch[0].soil_ns.soil3n + patch[0].soil_ns.soil4n
+		+ patch[0].soil_ns.sminn + patch[0].soil_ns.nitrate + patch[0].soil_ns.DON;
+	t += patch[0].surface_NO3 + patch[0].surface_NH4 + patch[0].surface_DON;
+	return t;
+}
+static double nb_plant(struct patch_object *patch)
+{
+	int i;
+	double t = 0.0;
+	for (i = 0; i < patch[0].num_canopy_strata; i++) {
+		struct canopy_strata_object *s = patch[0].canopy_strata[i];
+		struct nstate_struct *n = &(s[0].ns);
+		t += s[0].cover_fraction * (n->npool + n->leafn + n->dead_leafn + n->live_stemn + n->dead_stemn
+			+ n->live_crootn + n->dead_crootn + n->frootn + n->retransn
+			+ n->leafn_transfer + n->livestemn_transfer + n->deadstemn_transfer + n->livecrootn_transfer
+			+ n->deadcrootn_transfer + n->frootn_transfer + n->leafn_store + n->livestemn_store
+			+ n->deadstemn_store + n->livecrootn_store + n->deadcrootn_store + n->frootn_store
+			+ n->cwdn + n->cwdn_bg);
+	}
+	return t;
+}
+static void nb_report(void)
+{
+	int k;
+	const char *fn = getenv("NB_FILE");
+	FILE *f = fopen(fn ? fn : "n_budget.txt", "w");
+	double y = (nb_area_days > 0) ? 365.0 * 1000.0 / nb_area_days : 0.0;   /* kg -> g N/m2/yr */
+	if (f == NULL) return;
+	fprintf(f, "step\tg_N_m2_yr\n");
+	fprintf(f, "(columns: total change, plant-pool change, non-plant change)\n");
+	for (k = 0; k < NB_NSEG; k++) fprintf(f, "%s\t%.6f\t%.6f\t%.6f\n", nb_lab[k], nb_acc[k] * y, nb_acc_plant[k] * y, (nb_acc[k] - nb_acc_plant[k]) * y);
+	fprintf(f, "patch ndf.sminn_to_npool (uptake debited from soil)\t%.6f\n", nb_uptake * y);
+	fprintf(f, "update_decomp_root immobilisation shortfall (created N)\t%.6f\n", nb_root_unmet_acc * y);
+	fprintf(f, "EXTERNAL zone N deposition (NO3+NH4)\t%.6f\n", nb_ext_ndep * y);
+	fprintf(f, "EXTERNAL denitrification (ndf.denitrif)\t%.6f\n", nb_ext_denit * y);
+	fprintf(f, "EXTERNAL N_to_gw (ndf.N_to_gw)\t%.6f\n", nb_ext_gw * y);
+	fclose(f);
+}
+#define NB_CP(k) do { double nb_t = nb_total(patch); double nb_p = nb_plant(patch); nb_acc[k] += (nb_t - nb_prev) * patch[0].area; nb_acc_plant[k] += (nb_p - nb_prev_p) * patch[0].area; nb_prev = nb_t; nb_prev_p = nb_p; } while (0)
+#else
+#define NB_CP(k)
+#endif
 void		patch_daily_F(
 						  struct	world_object	*world,
 						  struct	basin_object	*basin,
@@ -463,6 +554,15 @@ void		patch_daily_F(
 	/*	alos for the Kdowns and PAR (for now Ldown can be kept )	*/
 	/*--------------------------------------------------------------*/
 
+#ifdef N_BUDGET
+	double nb_prev = nb_total(patch);
+	double nb_prev_p = nb_plant(patch);
+	if (!nb_registered) { atexit(nb_report); nb_registered = 1; }
+	if (patch[0].ID >= 0 && patch[0].ID < NB_MAXID && nb_has_end[patch[0].ID])
+		nb_acc[0] += (nb_prev - nb_prev_end[patch[0].ID]) * patch[0].area;
+	nb_area_days += patch[0].area;
+	nb_ext_ndep += (zone[0].ndep_NO3 + zone[0].ndep_NH4) * patch[0].area;
+#endif
 	if (command_line[0].surface_energy_flag == 0)
 		patch[0].Tsoil = zone[0].metv.tsoil;
 
@@ -1301,6 +1401,7 @@ void		patch_daily_F(
 	patch[0].fertilizer_NO3 += fertilizer_NO3;
 	patch[0].fertilizer_NH4 += fertilizer_NH4;
 	//patch[0].surface_NO3 += zone[0].ndep_NO3;
+	NB_CP(1);
 	patch[0].surface_NO3 += 0.5 * patch[0].NO3_throughfall;
 	patch[0].surface_NH4 += zone[0].ndep_NH4;
 
@@ -1351,6 +1452,7 @@ void		patch_daily_F(
 
 	/* Calculate det store, litter, and bare soil evap first */
 
+	NB_CP(2);
 	surface_daily_F(
 					world,
 					basin,
@@ -1872,6 +1974,7 @@ void		patch_daily_F(
 	/* 	Resolve plant uptake and soil microbial N demands	*/
 	/*--------------------------------------------------------------*/
 	if (command_line[0].grow_flag > 0)  {
+		NB_CP(3);
                 resolve_sminn_competition(&(patch[0].soil_ns),patch[0].surface_NO3,
                         patch[0].surface_NH4,
                         patch[0].rootzone.depth,
@@ -2224,6 +2327,7 @@ void		patch_daily_F(
 	if ((command_line[0].grow_flag > 0) && (vegtype == 1)) {
 
 
+		NB_CP(4);
 		if ( update_decomp_root( //to make sure update root decomposition first, because everything will add to soil in update_decomp
 			current_date,
 			&(patch[0].soil_cs),
@@ -2238,6 +2342,11 @@ void		patch_daily_F(
 		}
 
 
+		NB_CP(9);
+#ifdef N_BUDGET
+		nb_root_unmet_acc += nb_root_unmet_patch * patch[0].area;
+		nb_root_unmet_patch = 0.0;
+#endif
 		if ( update_decomp(
 			current_date,
 			&(patch[0].soil_cs),
@@ -2264,6 +2373,7 @@ void		patch_daily_F(
            patch[0].soil_ns.DON); */
 
 
+		NB_CP(5);
 		if (patch[0].soil_defaults[0][0].DON_production_rate > ZERO) {
 			if ( update_dissolved_organic_losses(
 				current_date,
@@ -2301,6 +2411,7 @@ void		patch_daily_F(
                       patch[0].soil_ns.DON
                      ); */
 
+		NB_CP(6);
 		if ( update_nitrif(
 			&(patch[0].soil_cs),
 			&(patch[0].soil_ns),
@@ -2334,6 +2445,7 @@ void		patch_daily_F(
                       patch[0].soil_ns.DON); */
 
 
+		NB_CP(7);
 		if ( update_denitrif(
 			&(patch[0].soil_cs),
 			&(patch[0].soil_ns),
@@ -2364,6 +2476,11 @@ void		patch_daily_F(
 		  ); */
 
 
+		NB_CP(8);
+#ifdef N_BUDGET
+		nb_ext_denit += patch[0].ndf.denitrif * patch[0].area;
+		nb_uptake += patch[0].ndf.sminn_to_npool * patch[0].area;
+#endif
 	} //line 2150 grow
 
 
@@ -2561,5 +2678,10 @@ if ( command_line[0].verbose_flag == -5 ){
 	/*--------------------------------------------------------------*/
 	compute_sediment_detachment(patch, zone, command_line);
 
+#ifdef N_BUDGET
+	NB_CP(10);
+	nb_ext_gw += patch[0].ndf.N_to_gw * patch[0].area;
+	if (patch[0].ID >= 0 && patch[0].ID < NB_MAXID) { nb_prev_end[patch[0].ID] = nb_prev; nb_has_end[patch[0].ID] = 1; }
+#endif
 	return;
 } /*end patch_daily_F.c*/

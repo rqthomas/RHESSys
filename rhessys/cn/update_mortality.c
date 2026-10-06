@@ -28,6 +28,16 @@
 /*                                                              */
 /*	calculated daily mortality losses and updates 		*/
 /*	carbon and nitrogen pools				*/
+/*								*/
+/*	thintyp: 1 = killed biomass to litter/CWD (remain)	*/
+/*	         2 = aboveground removed (harvest)		*/
+/*	         3 = as 1, but stems stay as standing dead	*/
+/*	         4 = as 1 (fire, killed but not consumed), but	*/
+/*	             killed aboveground non-structural C and N	*/
+/*	             of trees (cpool/npool, leaf and stem	*/
+/*	             stores and transfers, gresp, retransn) go	*/
+/*	             to CWD with the dead stems instead of	*/
+/*	             labile litter (litr1c/litr1n)		*/
 /*                                                              */
 /*  PROGRAMMER NOTES                                            */
 /*                                                              */
@@ -271,12 +281,16 @@ if((cs_litr[0].litr1c + cs_litr[0].litr2c + cs_litr[0].litr3c + cs_litr[0].litr4
 	cs->mr_deficit -= mort.mort_cpool * cs->mr_deficit;
 	cs->mr_deficit = max(0.0, cs->mr_deficit);
 
+	/* killed aboveground reserves: labile litter, or CWD for fire-killed trees (thintyp 4) */
+	double *reserve_c = ((thintyp == 4) && (epc.veg_type == TREE)) ? &(cs->cwdc) : &(cs_litr->litr1c);
+	double *reserve_n = ((thintyp == 4) && (epc.veg_type == TREE)) ? &(ns->cwdn) : &(ns_litr->litr1n);
+
 	/* ABOVEGROUND C POOLS */
 
 	/* Only add dead leaf and stem c to litter and cwd pools if thintyp   */
 	/* is not 2 (harvest case). If thintyp is 2, harvest aboveground c.   */
 	if (thintyp != 2) {
-		cs_litr->litr1c    += m_cpool;
+		*reserve_c         += m_cpool;
 		/*    Leaf mortality */
 		cs_litr->litr1c    += m_leafc_to_litr1c;
 		cs_litr->litr2c    += m_leafc_to_litr2c;
@@ -286,8 +300,8 @@ if((cs_litr[0].litr1c + cs_litr[0].litr2c + cs_litr[0].litr3c + cs_litr[0].litr4
 		cs_litr->litr2c    += m_deadleafc_to_litr2c;
 		cs_litr->litr3c    += m_deadleafc_to_litr3c;
 		cs_litr->litr4c    += m_deadleafc_to_litr4c;
-		cs_litr->litr1c    += m_leafc_store_to_litr1c;
-		cs_litr->litr1c    += m_leafc_transfer_to_litr1c;
+		*reserve_c         += m_leafc_store_to_litr1c;
+		*reserve_c         += m_leafc_transfer_to_litr1c;
 if((cs_litr[0].litr1c + cs_litr[0].litr2c + cs_litr[0].litr3c + cs_litr[0].litr4c) > 100) {
     printf("\n at line 274  update mortality: litter 1=%lf, litter2 =%lf, litter3=%lf, litter4=%lf\n",
     cs_litr[0].litr1c, cs_litr[0].litr2c, cs_litr[0].litr3c, cs_litr[0].litr4c);
@@ -304,14 +318,14 @@ if((cs_litr[0].litr1c + cs_litr[0].litr2c + cs_litr[0].litr3c + cs_litr[0].litr4
 				cs->cwdc       += m_livestemc_to_cwdc;
 				cs->cwdc       += m_deadstemc_to_cwdc;
 				}
-			cs_litr->litr1c    += m_livestemc_store_to_litr1c;
-			cs_litr->litr1c    += m_deadstemc_store_to_litr1c;
-			cs_litr->litr1c    += m_livestemc_transfer_to_litr1c;
-			cs_litr->litr1c    += m_deadstemc_transfer_to_litr1c;
+			*reserve_c         += m_livestemc_store_to_litr1c;
+			*reserve_c         += m_deadstemc_store_to_litr1c;
+			*reserve_c         += m_livestemc_transfer_to_litr1c;
+			*reserve_c         += m_deadstemc_transfer_to_litr1c;
 			}
 		/* gresp... group in with aboveground? */
-		cs_litr->litr1c         += m_gresp_store_to_litr1c;
-		cs_litr->litr1c         += m_gresp_transfer_to_litr1c;
+		*reserve_c              += m_gresp_store_to_litr1c;
+		*reserve_c              += m_gresp_transfer_to_litr1c;
 
 if((cs_litr[0].litr1c + cs_litr[0].litr2c + cs_litr[0].litr3c + cs_litr[0].litr4c) > 100) {
     printf("\n at line 298  update mortality: litter 1=%lf, litter2 =%lf, litter3=%lf, litter4=%lf\n",
@@ -396,7 +410,7 @@ if((cs_litr[0].litr1c + cs_litr[0].litr2c + cs_litr[0].litr3c + cs_litr[0].litr4
 	/* Only add dead leaf and stem n to litter and cwd pools if thintyp   */
 	/* is not 2 (harvest case). If thintyp is 2, harvest aboveground n.   */
 	if (thintyp != 2) {
-		ns_litr->litr1n         += m_npool;
+		*reserve_n              += m_npool;
 		/*    Leaf mortality */
 		ns_litr->litr1n    += m_leafn_to_litr1n;
 		ns_litr->litr2n    += m_leafn_to_litr2n;
@@ -406,9 +420,9 @@ if((cs_litr[0].litr1c + cs_litr[0].litr2c + cs_litr[0].litr3c + cs_litr[0].litr4
 		ns_litr->litr2n    += m_deadleafn_to_litr2n;
 		ns_litr->litr3n    += m_deadleafn_to_litr3n;
 		ns_litr->litr4n    += m_deadleafn_to_litr4n;
-		ns_litr->litr1n    += m_leafn_store_to_litr1n;
-		ns_litr->litr1n    += m_leafn_transfer_to_litr1n;
-		ns_litr->litr1n    += m_retransn_to_litr1n;
+		*reserve_n         += m_leafn_store_to_litr1n;
+		*reserve_n         += m_leafn_transfer_to_litr1n;
+		*reserve_n         += m_retransn_to_litr1n;
 		if (epc.veg_type == TREE){
 		/*    Stem wood mortality */
 			ns_litr->litr1n     += m_livestemn_to_litr1n;
@@ -422,10 +436,10 @@ if((cs_litr[0].litr1c + cs_litr[0].litr2c + cs_litr[0].litr3c + cs_litr[0].litr4
 				ns->dead_stemn       += m_livestemn_to_cwdn;
 				ns->dead_stemn       += m_deadstemn_to_cwdn;
 				}
-			ns_litr->litr1n    += m_livestemn_store_to_litr1n;
-			ns_litr->litr1n    += m_deadstemn_store_to_litr1n;
-			ns_litr->litr1n    += m_livestemn_transfer_to_litr1n;
-			ns_litr->litr1n    += m_deadstemn_transfer_to_litr1n;
+			*reserve_n         += m_livestemn_store_to_litr1n;
+			*reserve_n         += m_deadstemn_store_to_litr1n;
+			*reserve_n         += m_livestemn_transfer_to_litr1n;
+			*reserve_n         += m_deadstemn_transfer_to_litr1n;
 			}
 //if((cs_litr[0].litr1c + cs_litr[0].litr2c + cs_litr[0].litr3c + cs_litr[0].litr4c) > 3) {
 //printf("\n at line 393 update mortality: litter 1=%lf, litter2 =%lf, litter3=%lf, litter4=%lf\n", cs_litr[0].litr1c, cs_litr[0].litr2c, cs_litr[0].litr3c, cs_litr[0].litr4c);

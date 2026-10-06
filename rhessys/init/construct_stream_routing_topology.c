@@ -149,6 +149,7 @@ struct stream_list_object construct_stream_routing_topology(
 		stream_network_ini[i].lateral_DOC=0.0;
 		stream_network_ini[i].sediment_in=0.0;
 		stream_network_ini[i].sediment_out=0.0;
+		stream_network_ini[i].lateral_sediment=0.0;
 	
 		/*find neighbouring hillslopes by reach_ID, one hill ID is reach_ID-1, another is reach_ID*/
 		

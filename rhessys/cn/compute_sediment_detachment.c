@@ -17,7 +17,9 @@
 /*  DESCRIPTION                                                 */
 /*  Rainsplash detachment:                                      */
 /*    KE (MJ/m2/day) = rain_mm * 0.029  (simplified USLE KE)  */
-/*    cover_frac = 1 - exp(-0.5 * LAI)                         */
+/*    cover_frac = 1 - exp(-k * LAI), k = cover_canopy_k       */
+/*      (soil def, default 0.5; larger k gives forest-like C  */
+/*      under full canopy, standing in for litter cover)       */
 /*    C_factor: from soil defaults if in (0,1], else 1-cover   */
 /*    rainsplash [kg/m2] = KE * soil_erodibility_K * C_factor  */
 /*                                                              */
@@ -52,7 +54,7 @@ void compute_sediment_detachment(
     KE = rain_mm * 0.029; /* MJ/m2/day */
 
     /* Canopy cover fraction attenuates KE to soil surface   */
-    cover_frac = 1.0 - exp(-0.5 * patch[0].lai);
+    cover_frac = 1.0 - exp(-patch[0].soil_defaults[0][0].cover_canopy_k * patch[0].lai);
 
     /* C-factor: user-supplied or derived from canopy cover  */
     C_factor = patch[0].soil_defaults[0][0].cover_and_management_C;

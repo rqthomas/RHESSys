@@ -211,6 +211,7 @@ double  compute_stream_routing(struct command_line_object *command_line,
 		}
 		/* sediment: simple conservative pass-through */
 		stream_network[i].sediment_out = stream_network[i].sediment_in + lateral_sediment;
+		stream_network[i].lateral_sediment = lateral_sediment;
 		stream_network[i].sediment_in  = 0.0;
 		
         /*calulate income flow  for downstream neighbours */

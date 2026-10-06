@@ -536,6 +536,7 @@ double lateral_DON; /* kg N/day */
 double lateral_DOC; /* kg C/day */
 double sediment_in;  /* kg/day - sediment received from upstream + lateral */
 double sediment_out; /* kg/day - sediment leaving reach outlet */
+double lateral_sediment; /* kg/day - sediment from lateral input patches (excludes upstream reaches) */
 };
 
 struct stream_list_object
@@ -1288,6 +1289,7 @@ struct	soil_default
 	double  soil_erodibility_K;             /* USLE K-factor (kg h / MJ mm) */
 	double  sediment_transport_capacity_c;  /* dimensionless transport coefficient */
 	double  cover_and_management_C;         /* USLE C-factor (0=max cover, 1=bare soil; 0=use LAI-derived) */
+	double  cover_canopy_k;                 /* LAI-derived C-factor: C = exp(-k * LAI) (default 0.5) */
 	struct soil_class	soil_type;
 	};
 
