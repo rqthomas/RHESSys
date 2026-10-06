@@ -105,7 +105,8 @@ double compute_potential_N_uptake_Dickenson(
 	 if (cs->mr_deficit > ZERO) {
                  transfer = min(cs->availc, cs->mr_deficit);
                   cs->availc -= transfer;
-                   cs->cpool += transfer;
+                   /* no cpool += transfer: the C held back from availc already stays in cpool
+                      (update_C_stratum_daily adds psn - mr and removes only allocations) */
                 cs->mr_deficit -= transfer;
                 }
 
