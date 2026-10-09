@@ -290,6 +290,8 @@ struct basin_object *construct_basin(
   basin[0].acc_month.stream_NH4 = 0.0;
   basin[0].acc_month.stream_DON = 0.0;
   basin[0].acc_month.stream_DOC = 0.0;
+  basin[0].acc_month.stream_POC = 0.0;
+  basin[0].acc_month.stream_PON = 0.0;
   basin[0].acc_month.PET = 0.0;
   basin[0].acc_month.psn = 0.0;
   basin[0].acc_month.num_threshold = 0;
@@ -320,6 +322,8 @@ struct basin_object *construct_basin(
   basin[0].acc_year.stream_NH4 = 0.0;
   basin[0].acc_year.stream_DON = 0.0;
   basin[0].acc_year.stream_DOC = 0.0;
+  basin[0].acc_year.stream_POC = 0.0;
+  basin[0].acc_year.stream_PON = 0.0;
   basin[0].acc_year.PET = 0.0;
   basin[0].acc_year.psn = 0.0;
   basin[0].acc_year.num_threshold = 0;

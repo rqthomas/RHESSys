@@ -266,12 +266,11 @@ if((cs_litr[0].litr1c + cs_litr[0].litr2c + cs_litr[0].litr3c + cs_litr[0].litr4
 	/* ---------------------------------------- */
 	/* CARBON mortality state variable update   */
 	/* ---------------------------------------- */
-	/* if cpool or npooll has gone negative = just zero it out and add nothing to litter */
-	/* this could cause C balance or N balance issues but best option as Cpool really shouldn't be negative */
+	/* if cpool or npool has gone negative, kill nothing from them today and add nothing to */
+	/* litter, but leave both pools as they are: a negative cpool is a carbon debt that the */
+	/* allocation code repays from later photosynthesis. Zeroing them here created C and    */
+	/* deleted the (usually positive) npool, ~0.26 g N/m2/yr in the CCR spin-up.            */
 	if ((m_cpool < 0) || (m_npool < 0)) {
-		cs->cpool = 0.0;
-		ns->npool = 0.0;
-		/* zero out fluxes to litter */
 		m_cpool = 0.0;
 		m_npool = 0.0;
 		}

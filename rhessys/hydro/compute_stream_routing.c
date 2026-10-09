@@ -47,8 +47,13 @@
 double  compute_stream_routing(struct command_line_object *command_line,
 						 struct stream_network_object *stream_network,
 						 int  num_reaches,
-						 struct	date	current_date)
+						 struct	date	current_date,
+						 double T_air)
 {
+	void compute_stream_bgc(struct stream_network_object *, double, double, double, double,
+		double, double, double, double, double, double, double, struct stream_bgc_defaults *);
+	int stream_bgc_is_lake(int, struct stream_bgc_defaults *);
+	int bgc_here;
 	/*--------------------------------------------------------------*/
 	/*	Local function definition.				*/
 	/*--------------------------------------------------------------*/
@@ -83,6 +88,8 @@ double  compute_stream_routing(struct command_line_object *command_line,
 	double Qout,Qin,previous_lateral_input,length,initial_flow,sum;
 	double lateral_NO3, lateral_NH4, lateral_DON, lateral_DOC;
 	double lateral_sediment;
+	double lateral_POC, lateral_PON, lateral_POC_labile, lateral_PON_labile;
+	double lateral_POC_sed, lateral_PON_sed;
 	
 
 	struct patch_object *patch;
@@ -104,6 +111,8 @@ double  compute_stream_routing(struct command_line_object *command_line,
 		lateral_DON = 0.0;
 		lateral_DOC = 0.0;
 		lateral_sediment = 0.0;
+		lateral_POC = 0.0; lateral_PON = 0.0; lateral_POC_labile = 0.0; lateral_PON_labile = 0.0;
+		lateral_POC_sed = 0.0; lateral_PON_sed = 0.0;
 		Qout=0.0;
 		Qin=0.0;
 		previous_lateral_input=0.0;
@@ -129,6 +138,12 @@ double  compute_stream_routing(struct command_line_object *command_line,
 				   lateral_DOC += patch[0].streamflow_DOC * patch[0].area;
 			   }
 			   lateral_sediment += patch[0].streamflow_sediment * patch[0].area; /* kg/day */
+			   lateral_POC += patch[0].streamflow_POC * patch[0].area;          /* kg C/day, leaf litter */
+			   lateral_PON += patch[0].streamflow_PON * patch[0].area;
+			   lateral_POC_labile += patch[0].streamflow_POC_labile * patch[0].area;
+			   lateral_PON_labile += patch[0].streamflow_PON_labile * patch[0].area;
+			   lateral_POC_sed += patch[0].streamflow_sedC * patch[0].area;      /* eroded soil organic matter */
+			   lateral_PON_sed += patch[0].streamflow_sedN * patch[0].area;
 
 
 	}
@@ -152,7 +167,9 @@ double  compute_stream_routing(struct command_line_object *command_line,
           
 	   /*calulate alfa from manning conductivity, wetperimeter, and streamslope*/
            if(stream_network[i].stream_slope <=0 ) stream_network[i].stream_slope=0.01;
-	   alfa = pow(stream_network[i].manning*pow(stream_network[i].bottom_width,(2.0/3.0))*pow((1/stream_network[i].stream_slope),-0.5),0.6);
+	   alfa = pow(stream_network[i].manning*pow(stream_network[i].bottom_width,(2.0/3.0))*pow((1/stream_network[i].stream_slope),0.5),0.6);
+	   /* Manning: A = (n P^(2/3) Q / S^(1/2))^0.6, so alfa = (n P^(2/3) S^(-1/2))^0.6; the exponent on
+	      1/slope was -0.5 (= slope^+0.5) since 2012, making channel areas ~slope^0.6 too small (fixed 2026-10-08) */
 	   tangent = (stream_network[i].top_width-stream_network[i].bottom_width)/(2*stream_network[i].max_height);
 	   if(tangent <= 0.0) tangent=0.0001;
 	   alfa = alfa*pow((1+2*sqrt(1+tangent*tangent)*stream_network[i].water_depth/stream_network[i].bottom_width),0.4);
@@ -194,8 +211,29 @@ double  compute_stream_routing(struct command_line_object *command_line,
 		stream_network[i].previous_Qin=Qin;
 		stream_network[i].Qin=0.0;
 
-		/* compute reach nutrient outlet load and reset inbox for next timestep */
-		if (command_line[0].grow_flag > 0) {
+		/* compute reach nutrient outlet load and reset inbox for next timestep;
+		   reaches listed as inside a lake/reservoir pass loads through */
+		bgc_here = (command_line[0].stream_bgc_flag == 1)
+			&& !stream_bgc_is_lake(stream_network[i].reach_ID, command_line[0].stream_bgc);
+		if (bgc_here && (command_line[0].grow_flag > 0)) {
+			/* in-stream storage and processing: sets NO3/NH4/DON/DOC/POC/PON_out */
+			compute_stream_bgc(&(stream_network[i]),
+				stream_network[i].NO3_in + lateral_NO3, stream_network[i].NH4_in + lateral_NH4,
+				stream_network[i].DON_in + lateral_DON, stream_network[i].DOC_in + lateral_DOC,
+				stream_network[i].POC_in + lateral_POC_sed, stream_network[i].PON_in + lateral_PON_sed, lateral_POC, lateral_PON,
+				stream_network[i].Qout * 86400.0,
+				alfa * pow(max(stream_network[i].Qout, 0.0), 0.6) * stream_network[i].length,   /* reach water volume, m3 */
+				T_air, command_line[0].stream_bgc);
+			stream_network[i].lateral_NO3 = lateral_NO3;
+			stream_network[i].lateral_NH4 = lateral_NH4;
+			stream_network[i].lateral_DON = lateral_DON;
+			stream_network[i].lateral_DOC = lateral_DOC;
+			stream_network[i].NO3_in = 0.0;
+			stream_network[i].NH4_in = 0.0;
+			stream_network[i].DON_in = 0.0;
+			stream_network[i].DOC_in = 0.0;
+		}
+		else if (command_line[0].grow_flag > 0) {
 			stream_network[i].NO3_out = stream_network[i].NO3_in + lateral_NO3;
 			stream_network[i].NH4_out = stream_network[i].NH4_in + lateral_NH4;
 			stream_network[i].DON_out = stream_network[i].DON_in + lateral_DON;
@@ -213,6 +251,19 @@ double  compute_stream_routing(struct command_line_object *command_line,
 		stream_network[i].sediment_out = stream_network[i].sediment_in + lateral_sediment;
 		stream_network[i].lateral_sediment = lateral_sediment;
 		stream_network[i].sediment_in  = 0.0;
+		/* leaf litter POC/PON: conservative pass-through, like sediment */
+		if (!bgc_here || (command_line[0].grow_flag <= 0)) {
+			stream_network[i].POC_out = stream_network[i].POC_in + lateral_POC + lateral_POC_sed;
+			stream_network[i].PON_out = stream_network[i].PON_in + lateral_PON + lateral_PON_sed;
+		}
+		stream_network[i].lateral_POC_sed = lateral_POC_sed;
+		stream_network[i].lateral_PON_sed = lateral_PON_sed;
+		stream_network[i].lateral_POC = lateral_POC + lateral_POC_sed;   /* total lateral POC: leaf litter + eroded */
+		stream_network[i].lateral_PON = lateral_PON + lateral_PON_sed;
+		stream_network[i].lateral_POC_labile = lateral_POC_labile;
+		stream_network[i].lateral_PON_labile = lateral_PON_labile;
+		stream_network[i].POC_in = 0.0;
+		stream_network[i].PON_in = 0.0;
 		
         /*calulate income flow  for downstream neighbours */
 	     for (j=0; j< stream_network[i].num_downstream_neighbours; j++) {
@@ -227,6 +278,8 @@ double  compute_stream_routing(struct command_line_object *command_line,
 						stream_network[k].DOC_in += stream_network[i].DOC_out / stream_network[i].num_downstream_neighbours;
 					}
 					stream_network[k].sediment_in += stream_network[i].sediment_out / stream_network[i].num_downstream_neighbours;
+					stream_network[k].POC_in += stream_network[i].POC_out / stream_network[i].num_downstream_neighbours;
+					stream_network[k].PON_in += stream_network[i].PON_out / stream_network[i].num_downstream_neighbours;
 					break;			
 	}	
 	}

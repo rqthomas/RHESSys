@@ -87,7 +87,7 @@
 /* (default n_budget.txt). Steps should change N only by the      */
 /* listed external fluxes; anything else is a leak.               */
 /*--------------------------------------------------------------*/
-#define NB_NSEG 11
+#define NB_NSEG 17
 #define NB_MAXID 200000
 static double nb_acc[NB_NSEG];
 static double nb_acc_plant[NB_NSEG];
@@ -95,6 +95,37 @@ static double nb_uptake = 0.0;
 extern double nb_root_unmet_patch;
 static double nb_root_unmet_acc = 0.0;
 static double nb_ext_ndep = 0.0, nb_ext_denit = 0.0, nb_ext_gw = 0.0, nb_area_days = 0.0;
+static double nb_ext_gwDON = 0.0;
+static double nb_seg_out[NB_NSEG];   /* per-segment external outflow recorded in patch flux fields */
+static double nb_seg_dep[NB_NSEG];   /* per-segment deposition seen at the checkpoint */
+static double nb_prev_out = 0.0;
+static double nb_neg_s2[NB_NSEG];   /* soil2n driven below zero during each segment */
+static double nb_prev_s2 = 0.0;
+static double nb_clamp[16];   /* N added by check_zero_stores, per pool */
+static const char *nb_clamp_lab[16] = {"litr1n","litr2n","litr3n","litr4n","litr1n_bg","litr2n_bg","litr3n_bg","litr4n_bg",
+	"soil1n","soil2n","soil3n","soil4n","nitrate","sminn","(pool was exactly 0 or positive below ZERO)","(pool was negative)"};
+static void nb_clamp_acc(struct patch_object *patch)
+{
+	double v[14];
+	int i;
+	v[0] = patch[0].litter_ns.litr1n; v[1] = patch[0].litter_ns.litr2n; v[2] = patch[0].litter_ns.litr3n; v[3] = patch[0].litter_ns.litr4n;
+	v[4] = patch[0].litter_ns.litr1n_bg; v[5] = patch[0].litter_ns.litr2n_bg; v[6] = patch[0].litter_ns.litr3n_bg; v[7] = patch[0].litter_ns.litr4n_bg;
+	v[8] = patch[0].soil_ns.soil1n; v[9] = patch[0].soil_ns.soil2n; v[10] = patch[0].soil_ns.soil3n; v[11] = patch[0].soil_ns.soil4n;
+	v[12] = patch[0].soil_ns.nitrate; v[13] = patch[0].soil_ns.sminn;
+	for (i = 0; i < 14; i++) if (v[i] < ZERO) {
+		nb_clamp[i] += (ZERO - v[i]) * patch[0].area;
+		if (v[i] >= 0.0) nb_clamp[14] += (ZERO - v[i]) * patch[0].area; else nb_clamp[15] += (ZERO - v[i]) * patch[0].area;
+	}
+}
+static double nb_out_fields(struct patch_object *patch)
+{
+	return patch[0].ndf.N_to_gw + patch[0].ndf.DON_to_gw + patch[0].ndf.denitrif
+		+ patch[0].streamflow_NO3 + patch[0].streamflow_NH4 + patch[0].streamflow_DON
+		+ patch[0].streamflow_sedN + patch[0].streamflow_PON;
+}
+double nb_ext_stream = 0.0;      /* kg N: patch exports to streams (NO3, NH4, DON, sediment PON, leaf PON), summed after routing in hillslope_daily_F.c */
+double nb_ext_stream_sed = 0.0;  /* kg N: of which sediment-borne PON */
+double nb_ext_gw_in = 0.0;       /* kg N: groundwater N discharged into riparian patches (-gwtoriparian) */
 static double nb_prev_end[NB_MAXID];
 static char nb_has_end[NB_MAXID];
 static int nb_registered = 0;
@@ -109,7 +140,13 @@ static const char *nb_lab[NB_NSEG] = {
 	"7 nitrification",
 	"8 denitrification",
 	"9 SWAPPED: root decomposition (update_decomp_root)",
-	"10 after grow block .. end"};
+	"10 after grow block .. end (rest)",
+	"11 [in 3] surface_daily_F",
+	"12 [in 3] update_gw_drainage",
+	"13 [in 3] infiltration + surface N to soil",
+	"14 [in 10] after grow block .. before check_zero_stores",
+	"15 [in 10] check_zero_stores (clamps negative soil/litter pools)",
+	"16 [in 10] .. before compute_sediment_detachment"};
 static double nb_total(struct patch_object *patch)
 {
 	int i;
@@ -130,6 +167,7 @@ static double nb_total(struct patch_object *patch)
 	t += patch[0].soil_ns.soil1n + patch[0].soil_ns.soil2n + patch[0].soil_ns.soil3n + patch[0].soil_ns.soil4n
 		+ patch[0].soil_ns.sminn + patch[0].soil_ns.nitrate + patch[0].soil_ns.DON;
 	t += patch[0].surface_NO3 + patch[0].surface_NH4 + patch[0].surface_DON;
+	t += patch[0].surface_sedN;   /* organic N carried with surface sediment */
 	return t;
 }
 static double nb_plant(struct patch_object *patch)
@@ -163,9 +201,29 @@ static void nb_report(void)
 	fprintf(f, "EXTERNAL zone N deposition (NO3+NH4)\t%.6f\n", nb_ext_ndep * y);
 	fprintf(f, "EXTERNAL denitrification (ndf.denitrif)\t%.6f\n", nb_ext_denit * y);
 	fprintf(f, "EXTERNAL N_to_gw (ndf.N_to_gw)\t%.6f\n", nb_ext_gw * y);
+	fprintf(f, "EXTERNAL DON_to_gw (ndf.DON_to_gw)\t%.6f\n", nb_ext_gwDON * y);
+	fprintf(f, "EXTERNAL patch exports to streams (NO3+NH4+DON+sediment PON+leaf PON)\t%.6f\n", nb_ext_stream * y);
+	fprintf(f, "  of which sediment-borne PON\t%.6f\n", nb_ext_stream_sed * y);
+	fprintf(f, "EXTERNAL groundwater N into riparian patches (-gwtoriparian)\t%.6f\n", nb_ext_gw_in * y);
+	for (k = 0; k < 16; k++) fprintf(f, "check_zero_stores adds to %s\t%.6f\n", nb_clamp_lab[k], nb_clamp[k] * y);
+	for (k = 0; k < NB_NSEG; k++) if (nb_neg_s2[k] != 0.0) fprintf(f, "soil2n pushed below zero in seg %d\t%.6f\n", k, nb_neg_s2[k] * y);
+	fprintf(f, "PER SEGMENT: change, outflow recorded in flux fields, unexplained (change + outflow - deposition in seg 2; seg 0 also + stream exports after routing)\n");
+	for (k = 0; k < NB_NSEG; k++) {
+		double unexpl = nb_acc[k] + nb_seg_out[k] - ((k == 2) ? nb_ext_ndep : 0.0) + ((k == 0) ? nb_ext_stream : 0.0);
+		fprintf(f, "  seg %d\t%.6f\t%.6f\t%.6f\n", k, nb_acc[k] * y, nb_seg_out[k] * y, unexpl * y);
+	}
+	{
+		double tot = 0.0;
+		for (k = 0; k < NB_NSEG; k++) tot += nb_acc[k];
+		fprintf(f, "TOTAL change in patch N (sum of steps)\t%.6f\n", tot * y);
+		fprintf(f, "EXPECTED: deposition + gw into riparian - denitrification - N_to_gw - DON_to_gw - stream exports\t%.6f\n",
+			(nb_ext_ndep + nb_ext_gw_in - nb_ext_denit - nb_ext_gw - nb_ext_gwDON - nb_ext_stream) * y);
+		fprintf(f, "CLOSURE ERROR (total - expected)\t%.6f\n",
+			(tot - (nb_ext_ndep + nb_ext_gw_in - nb_ext_denit - nb_ext_gw - nb_ext_gwDON - nb_ext_stream)) * y);
+	}
 	fclose(f);
 }
-#define NB_CP(k) do { double nb_t = nb_total(patch); double nb_p = nb_plant(patch); nb_acc[k] += (nb_t - nb_prev) * patch[0].area; nb_acc_plant[k] += (nb_p - nb_prev_p) * patch[0].area; nb_prev = nb_t; nb_prev_p = nb_p; } while (0)
+#define NB_CP(k) do { { double s2 = patch[0].soil_ns.soil2n; double was = (nb_prev_s2 < 0.0) ? nb_prev_s2 : 0.0; if (s2 < was) nb_neg_s2[k] += (was - s2) * patch[0].area; nb_prev_s2 = s2; } double nb_t = nb_total(patch); double nb_p = nb_plant(patch); double nb_o = nb_out_fields(patch); nb_acc[k] += (nb_t - nb_prev) * patch[0].area; nb_acc_plant[k] += (nb_p - nb_prev_p) * patch[0].area; nb_seg_out[k] += (nb_o - nb_prev_out) * patch[0].area; nb_prev = nb_t; nb_prev_p = nb_p; nb_prev_out = nb_o; } while (0)
 #else
 #define NB_CP(k)
 #endif
@@ -557,6 +615,8 @@ void		patch_daily_F(
 #ifdef N_BUDGET
 	double nb_prev = nb_total(patch);
 	double nb_prev_p = nb_plant(patch);
+	nb_prev_out = nb_out_fields(patch);
+	nb_prev_s2 = patch[0].soil_ns.soil2n;
 	if (!nb_registered) { atexit(nb_report); nb_registered = 1; }
 	if (patch[0].ID >= 0 && patch[0].ID < NB_MAXID && nb_has_end[patch[0].ID])
 		nb_acc[0] += (nb_prev - nb_prev_end[patch[0].ID]) * patch[0].area;
@@ -1403,7 +1463,10 @@ void		patch_daily_F(
 	//patch[0].surface_NO3 += zone[0].ndep_NO3;
 	NB_CP(1);
 	patch[0].surface_NO3 += 0.5 * patch[0].NO3_throughfall;
-	patch[0].surface_NH4 += zone[0].ndep_NH4;
+	/* NH4 deposition goes to the soil mineral N pool (where adsorption, nitrification
+	   and uptake act); left in surface_NH4 it drained to groundwater at
+	   sat_to_gw_coeff per day, bypassing the soil, and was most of stream NH4 */
+	patch[0].soil_ns.sminn += zone[0].ndep_NH4;
 
 	/*--------------------------------------------------------------*/
 	/*	a certain amount of surface_N is incorporated into the */
@@ -1469,6 +1532,7 @@ void		patch_daily_F(
 			   patch[0].Kup_diffuse/86.4);
 	}
 
+	NB_CP(11);
 	patch[0].detention_store += 0.5 * patch[0].rain_throughfall;
 
 	/*--------------------------------------------------------------*/
@@ -1499,6 +1563,7 @@ void		patch_daily_F(
 					exit(EXIT_FAILURE);
 				}
 			}
+			NB_CP(12);
 			net_inflow = patch[0].detention_store;
 			/*--------------------------------------------------------------*/
 			/*      - if rain duration is zero, then input is from snow     */
@@ -1608,6 +1673,7 @@ void		patch_daily_F(
 				}
 
 	} // end if hourly rain flag
+	NB_CP(13);
 	/*--------------------------------------------------------------*/
 	/*	Calculate patch level transpiration			*/
 	/*--------------------------------------------------------------*/
@@ -2637,12 +2703,17 @@ void		patch_daily_F(
 	/*	get rid of any negative soil or litter stores			*/
 	/*---------------------------------------------------------------------*/
 
+	NB_CP(14);
+#ifdef N_BUDGET
+	if (command_line[0].grow_flag > 0) nb_clamp_acc(patch);
+#endif
 	if (command_line[0].grow_flag > 0)
 		ch = check_zero_stores(
 			&(patch[0].soil_cs),
 			&(patch[0].soil_ns),
 			&(patch[0].litter_cs),
 			&(patch[0].litter_ns));
+	NB_CP(15);
 
 	if ( command_line[0].verbose_flag > 1 ) {
 		printf("\n%ld %ld %ld  -335.2 ",
@@ -2676,11 +2747,13 @@ if ( command_line[0].verbose_flag == -5 ){
 	/*--------------------------------------------------------------*/
 	/* Compute daily sediment detachment and transport capacity.    */
 	/*--------------------------------------------------------------*/
+	NB_CP(16);
 	compute_sediment_detachment(patch, zone, command_line);
 
 #ifdef N_BUDGET
 	NB_CP(10);
 	nb_ext_gw += patch[0].ndf.N_to_gw * patch[0].area;
+	nb_ext_gwDON += patch[0].ndf.DON_to_gw * patch[0].area;
 	if (patch[0].ID >= 0 && patch[0].ID < NB_MAXID) { nb_prev_end[patch[0].ID] = nb_prev; nb_has_end[patch[0].ID] = 1; }
 #endif
 	return;

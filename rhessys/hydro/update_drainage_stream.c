@@ -109,6 +109,7 @@ void  update_drainage_stream(
 	double Nin, Nout;  /* kg/m2 */
 	double t1,t2,t3;
 	double flow_frac, transport_cap, sed_out; /* sediment routing */
+	double sediment_export_scale(struct patch_object *, double, double);
 	
 	d=0;
 	route_to_stream = 0.0;
@@ -371,9 +372,21 @@ void  update_drainage_stream(
 		   Fix 2: cap export by transport capacity (Tc = c * Qout^1.5 kg/m2/day) */
 		if (patch[0].surface_sediment > 0.0) {
 			flow_frac = min(1.0, Qout / patch[0].detention_store);
-			transport_cap = patch[0].soil_defaults[0][0].sediment_transport_capacity_c
+			if (patch[0].soil_defaults[0][0].sediment_transport_slope_exp > 0.0)
+				/* slope-dependent capacity (same rule as land patches) */
+				sed_out = flow_frac * sediment_export_scale(patch, Qout, flow_frac) * patch[0].surface_sediment;
+			else {
+				transport_cap = patch[0].soil_defaults[0][0].sediment_transport_capacity_c
 							* pow(Qout, 1.5);
-			sed_out = min(flow_frac * patch[0].surface_sediment, transport_cap);
+				sed_out = min(flow_frac * patch[0].surface_sediment, transport_cap);
+			}
+			{	/* organic matter leaves with the same fraction of the sediment */
+				double fs = sed_out / patch[0].surface_sediment;
+				patch[0].streamflow_sedC += fs * patch[0].surface_sedC;
+				patch[0].streamflow_sedN += fs * patch[0].surface_sedN;
+				patch[0].surface_sedC -= fs * patch[0].surface_sedC;
+				patch[0].surface_sedN -= fs * patch[0].surface_sedN;
+			}
 			patch[0].streamflow_sediment += sed_out;
 			patch[0].surface_sediment    -= sed_out;
 		}

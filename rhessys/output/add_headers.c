@@ -172,7 +172,7 @@ void add_headers(struct world_output_file_object *world_output_files,
 	/*--------------------------------------------------------------*/
 	outfile = world_output_files[0].basin[0].monthly;
 	check = fprintf(outfile,
-		"%s %s %s %s %s %s %s %s %s %s %s %s %s %s\n", 
+		"%s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s\n", 
 		"month",
 		"year",
 		"basinID",
@@ -186,13 +186,14 @@ void add_headers(struct world_output_file_object *world_output_files,
 		"lai",
 		"nitrif",
 		"mineralized",
-		"uptake");
+		"uptake",
+		"streamflow_NH4", "streamflow_DON", "streamflow_DOC", "N_loss", "streamflow_POC", "streamflow_PON");
 	/*--------------------------------------------------------------*/
 	/*	Yearly 							*/
 	/*--------------------------------------------------------------*/
 	outfile = world_output_files[0].basin[0].yearly;
 	check = fprintf(outfile,
-		"%s %s %s %s %s %s %s %s %s %s %s %s %s %s %s\n", 
+		"%s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s\n", 
 		"year",
 		"basinID",
 		"streamflow",
@@ -202,7 +203,8 @@ void add_headers(struct world_output_file_object *world_output_files,
 		"DON",
 		"et",
 		"psn","lai","nitrif",
-		"mineralized", "uptake", "num_thresh","pet");
+		"mineralized", "uptake", "num_thresh","pet",
+		"streamflow_NH4", "streamflow_DON", "streamflow_DOC", "N_loss", "streamflow_POC", "streamflow_PON");
 	}
 
 	/*--------------------------------------------------------------*/
@@ -618,7 +620,7 @@ void add_headers(struct world_output_file_object *world_output_files,
 		
         outfile = world_output_files[0].stream_routing[0].daily;
 		if (command_line[0].grow_flag > 0) {
-			fprintf(outfile, "%s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s\n",
+			fprintf(outfile, "%s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s",
 					"day",
 					"month",
 					"year",
@@ -637,9 +639,11 @@ void add_headers(struct world_output_file_object *world_output_files,
 					"lateral_NH4",
 					"lateral_DON",
 					"lateral_DOC",
-					"lateral_sediment");
+					"lateral_sediment",
+					"POC_out", "PON_out", "lateral_POC", "lateral_PON", "lateral_POC_labile", "lateral_PON_labile",
+					"lateral_POC_sed", "lateral_PON_sed");
 		} else {
-			fprintf(outfile, "%s %s %s %s %s %s %s %s %s %s %s\n",
+			fprintf(outfile, "%s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s",
 					"day",
 					"month",
 					"year",
@@ -650,8 +654,17 @@ void add_headers(struct world_output_file_object *world_output_files,
 					"waterdepth",
 					"reservoir.store",
 					"sediment_out",
-					"lateral_sediment");
+					"lateral_sediment",
+					"POC_out", "PON_out", "lateral_POC", "lateral_PON", "lateral_POC_labile", "lateral_PON_labile",
+					"lateral_POC_sed", "lateral_PON_sed");
 		}
+		if (command_line[0].stream_bgc_flag == 1)
+			fprintf(outfile, " %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s",
+				"benthic_POC", "benthic_PON", "POC_deposit", "POC_entrain", "Frag_C", "Frag_N",
+				"DOM_dec_C", "N_mineral", "N_immob", "N_limit", "stream_CO2", "stream_denitrif",
+				"V_water", "wc_DOC", "wc_DON", "wc_NO3", "wc_NH4", "wc_POC", "wc_PON",
+				"Bed_mic_C", "Bed_N_mineral", "Bed_N_immob", "Bed_N_limit");
+		fprintf(outfile, "\n");
 	}	
 	return;
 } /*end add_headers*/

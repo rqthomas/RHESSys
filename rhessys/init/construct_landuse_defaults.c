@@ -136,6 +136,7 @@ struct landuse_default *construct_landuse_defaults(
 		default_object_list[i].salience_10km2km_prob = 	getDoubleParam(&paramCnt, &paramPtr, "salience_10km2km", "%lf", 0.1, 1);
 		default_object_list[i].salience_10km5km_prob = 	getDoubleParam(&paramCnt, &paramPtr, "salience_10km5km", "%lf", 0.1, 1);
 		default_object_list[i].salience_10km10km_prob = getDoubleParam(&paramCnt, &paramPtr, "salience_10km10km", "%lf", 0.1, 1);
+		default_object_list[i].stream_litter_overhang = getDoubleParam(&paramCnt, &paramPtr, "stream_litter_overhang", "%lf", 0.0, 1);
 
 		/*--------------------------------------------------------------*/
 		/*		Close the ith default file.								*/

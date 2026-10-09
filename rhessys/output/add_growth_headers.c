@@ -93,7 +93,7 @@ void add_growth_headers(struct world_output_file_object *world_output_files,
 	/*--------------------------------------------------------------*/
 	outfile = world_output_files[0].basin[0].daily;
 
-	fprintf(outfile,"%s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s\n" ,
+	fprintf(outfile,"%s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s\n" ,
 		"day",
 		"month",
 		"year",
@@ -157,7 +157,7 @@ void add_growth_headers(struct world_output_file_object *world_output_files,
 		"canopy_NO3_stored",
 		"litter_NO3_stored",
 		"NO3_throughfall",
-		"Nvolatilized_snk");
+		"Nvolatilized_snk", "N_loss", "streamflow_POC", "streamflow_PON");
 	/*--------------------------------------------------------------*/
 	/*	Yearly 							*/
 	/*--------------------------------------------------------------*/

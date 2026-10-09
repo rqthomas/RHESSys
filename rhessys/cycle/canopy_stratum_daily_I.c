@@ -279,6 +279,11 @@ void	canopy_stratum_daily_I(
 	/*--------------------------------------------------------------*/
 	/*  perform seasonal leaf sens. and budding						*/
 	/*--------------------------------------------------------------*/
+	/* leaf litterfall before phenology, to find today's litterfall below */
+	double pre_lc[4] = { patch[0].cdf.leafc_to_litr1c, patch[0].cdf.leafc_to_litr2c,
+		patch[0].cdf.leafc_to_litr3c, patch[0].cdf.leafc_to_litr4c };
+	double pre_ln[4] = { patch[0].ndf.leafn_to_litr1n, patch[0].ndf.leafn_to_litr2n,
+		patch[0].ndf.leafn_to_litr3n, patch[0].ndf.leafn_to_litr4n };
 	update_phenology( zone, &(stratum[0].epv),
 		stratum[0].defaults[0][0].epc,
 		&(stratum[0].phen),
@@ -303,6 +308,34 @@ void	canopy_stratum_daily_I(
 		command_line[0].grow_flag,
 		command_line[0].multiscale_flag,
 		patch[0].landuse_defaults[0][0].msr_shading_flag);
+	/*--------------------------------------------------------------*/
+	/*	stream-side patches: the share of today's leaf litterfall	*/
+	/*	that lands in the channel leaves the litter pools as stream */
+	/*	POC/PON (routed by compute_stream_routing)			*/
+	/*--------------------------------------------------------------*/
+	if ((patch[0].stream_litter_frac > ZERO) && (command_line[0].grow_flag > 0)) {
+		double f = patch[0].stream_litter_frac;
+		double *lc[4] = { &(patch[0].litter_cs.litr1c), &(patch[0].litter_cs.litr2c),
+			&(patch[0].litter_cs.litr3c), &(patch[0].litter_cs.litr4c) };
+		double *ln[4] = { &(patch[0].litter_ns.litr1n), &(patch[0].litter_ns.litr2n),
+			&(patch[0].litter_ns.litr3n), &(patch[0].litter_ns.litr4n) };
+		double now_lc[4] = { patch[0].cdf.leafc_to_litr1c, patch[0].cdf.leafc_to_litr2c,
+			patch[0].cdf.leafc_to_litr3c, patch[0].cdf.leafc_to_litr4c };
+		double now_ln[4] = { patch[0].ndf.leafn_to_litr1n, patch[0].ndf.leafn_to_litr2n,
+			patch[0].ndf.leafn_to_litr3n, patch[0].ndf.leafn_to_litr4n };
+		int k;
+		for (k = 0; k < 4; k++) {
+			double dc = f * (now_lc[k] - pre_lc[k]);
+			double dn = f * (now_ln[k] - pre_ln[k]);
+			dc = (dc > *lc[k]) ? *lc[k] : dc;  dc = (dc < 0.0) ? 0.0 : dc;
+			dn = (dn > *ln[k]) ? *ln[k] : dn;  dn = (dn < 0.0) ? 0.0 : dn;
+			*lc[k] -= dc;  *ln[k] -= dn;
+			patch[0].streamflow_POC += dc;
+			patch[0].streamflow_PON += dn;
+			if (k == 0) { patch[0].streamflow_POC_labile += dc; patch[0].streamflow_PON_labile += dn; }
+		}
+	}
+
 
 	/*--------------------------------------------------------------*/
 	/* if it is the last day of litterfall, perform carbon/nitrogen */

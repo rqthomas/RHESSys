@@ -70,7 +70,7 @@ void	basin_daily_F(
 	double	compute_stream_routing(
 		struct command_line_object *,
 		struct stream_network_object *,
-		int, struct	date);
+		int, struct	date, double);
 
 	void	update_basin_patch_accumulator(
 		struct command_line_object *command_line,
@@ -123,10 +123,19 @@ void	basin_daily_F(
 	/*--------------------------------------------------------------*/
 
     	if ( command_line[0].stream_routing_flag == 1) {
+		/* basin area-weighted daily mean air temperature (for -strbgc) */
+		double T_air = 0.0, a_sum = 0.0;
+		int hh, zz;
+		for (hh = 0; hh < basin[0].num_hillslopes; hh++)
+			for (zz = 0; zz < basin[0].hillslopes[hh][0].num_zones; zz++) {
+				T_air += basin[0].hillslopes[hh][0].zones[zz][0].metv.tavg * basin[0].hillslopes[hh][0].zones[zz][0].area;
+				a_sum += basin[0].hillslopes[hh][0].zones[zz][0].area;
+			}
+		if (a_sum > 0.0) T_air /= a_sum;
 		 basin[0].stream_list.streamflow=compute_stream_routing(command_line,
 			basin[0].stream_list.stream_network,
 			basin[0].stream_list.num_reaches,
-                        current_date);
+                        current_date, T_air);
 	}
 
 	/*--------------------------------------------------------------*/

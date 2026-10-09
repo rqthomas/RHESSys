@@ -145,11 +145,13 @@ double *construct_clim_sequence(char *file, struct date start_date,
 			j = 0;
 			while ((target_fnd == 0) && (j < i)) {	
 				curr_date = caldat(first_date_julian + offset + j);
-				if ((curr_date.month == target_date.month) 
+				if ((curr_date.month == target_date.month)
 					&& (curr_date.day == target_date.day)) target_fnd=1;
-				j = j+1;
+				else j = j+1;   /* stop ON the matching day: incrementing past it
+						   started each repeat one day late, so the climate
+						   drifted 1 day per cycle against the calendar */
 			}
-			if (j < i) {
+			if (target_fnd && (j < i)) {
 				avail_length = i-j;
 				needed_length = duration - i;
 				segs = floor(needed_length/avail_length);

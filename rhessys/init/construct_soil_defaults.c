@@ -249,6 +249,13 @@ struct soil_default *construct_soil_defaults(
 		default_object_list[i].DOM_decay_rate = 	getDoubleParam(&paramCnt, &paramPtr, "DOM_decay_rate", "%lf", 0.05, 1);
 		default_object_list[i].NH4_adsorption_rate =    getDoubleParam(&paramCnt, &paramPtr, "NH4_adsorption_rate", "%lf", 0.000005, 1);
 		default_object_list[i].DON_production_rate = 	getDoubleParam(&paramCnt, &paramPtr, "DON_production_rate", "%lf", 0.03, 1);
+		default_object_list[i].gw_DOM_recharge_frac = 	getDoubleParam(&paramCnt, &paramPtr, "gw_DOM_recharge_frac", "%lf", 0.0, 1);
+		default_object_list[i].splash_saturated_factor = 	getDoubleParam(&paramCnt, &paramPtr, "splash_saturated_factor", "%lf", 1.0, 1);
+		default_object_list[i].sediment_transport_litter_b = 	getDoubleParam(&paramCnt, &paramPtr, "sediment_transport_litter_b", "%lf", 0.0, 1);
+		default_object_list[i].sediment_transport_slope_exp = 	getDoubleParam(&paramCnt, &paramPtr, "sediment_transport_slope_exp", "%lf", 0.0, 1);
+		default_object_list[i].sediment_OC_mixing_mass = 	getDoubleParam(&paramCnt, &paramPtr, "sediment_OC_mixing_mass", "%lf", 0.0, 1);
+		default_object_list[i].sediment_OC_frac = 	getDoubleParam(&paramCnt, &paramPtr, "sediment_OC_frac", "%lf", 0.0, 1);
+		default_object_list[i].gw_DOC_recharge_max = 	getDoubleParam(&paramCnt, &paramPtr, "gw_DOC_recharge_max", "%lf", -1.0, 1);
 		default_object_list[i].DOC_adsorption_rate = 	getDoubleParam(&paramCnt, &paramPtr, "DOC_adsorption_rate", "%lf", 0.000023, 1);
 		default_object_list[i].DON_adsorption_rate = 	getDoubleParam(&paramCnt, &paramPtr, "DON_adsorption_rate", "%lf", 0.000001, 1);
 		default_object_list[i].interval_size = 		getDoubleParam(&paramCnt, &paramPtr, "interval_size", "%lf", INTERVAL_SIZE, 1);
@@ -287,6 +294,8 @@ struct soil_default *construct_soil_defaults(
 		default_object_list[i].sediment_transport_capacity_c = getDoubleParam(&paramCnt, &paramPtr, "sediment_transport_capacity_c", "%lf", 0.0, 1);
 		default_object_list[i].cover_and_management_C = getDoubleParam(&paramCnt, &paramPtr, "cover_and_management_C", "%lf", 0.0, 1);
 		default_object_list[i].cover_canopy_k = getDoubleParam(&paramCnt, &paramPtr, "cover_canopy_k", "%lf", 0.5, 1);
+		default_object_list[i].soil_riparian = getDoubleParam(&paramCnt, &paramPtr, "soil_riparian", "%lf", 0.0, 1);
+		default_object_list[i].cover_litter_a = getDoubleParam(&paramCnt, &paramPtr, "cover_litter_a", "%lf", 0.0, 1);
 	
 		/*--------------------------------------------------------------*/
 		/*		Close the ith default file.								*/

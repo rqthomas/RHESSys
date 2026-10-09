@@ -83,6 +83,7 @@ void  update_drainage_land(
 		double,
 		double *);
 
+	double	sediment_export_scale(struct patch_object *, double, double);
 	double recompute_gamma(
 		struct patch_object *,
 		double);
@@ -114,7 +115,8 @@ void  update_drainage_land(
 	double NH4_leached_to_surface; /* kg/m2 */
 	double DON_leached_to_surface; /* kg/m2 */
 	double DOC_leached_to_surface; /* kg/m2 */
-	double sed_leached_to_surface; /* kg */
+	double sed_leached_to_surface;
+	double sedC_leached_to_surface = 0.0, sedN_leached_to_surface = 0.0; /* kg */
 	double N_leached_total; /* kg/m2 */
 	double DON_leached_total; /* kg/m2 */
 	double DOC_leached_total; /* kg/m2 */
@@ -432,8 +434,13 @@ void  update_drainage_land(
 		/* route sediment proportional to overland flow */
 		if (patch[0].surface_sediment > 0.0) {
 			double flow_frac = min(1.0, Qout / patch[0].detention_store);
+			flow_frac *= sediment_export_scale(patch, Qout, flow_frac);   /* slope-dependent transport capacity */
 			sed_leached_to_surface = flow_frac * patch[0].surface_sediment * patch[0].area;
 			patch[0].surface_sediment -= flow_frac * patch[0].surface_sediment;
+			sedC_leached_to_surface = flow_frac * patch[0].surface_sedC * patch[0].area;
+			sedN_leached_to_surface = flow_frac * patch[0].surface_sedN * patch[0].area;
+			patch[0].surface_sedC -= flow_frac * patch[0].surface_sedC;
+			patch[0].surface_sedN -= flow_frac * patch[0].surface_sedN;
 			}
 		route_to_surface = (Qout *  patch[0].area);
 		patch[0].detention_store -= Qout;
@@ -517,10 +524,16 @@ void  update_drainage_land(
 		if (sed_leached_to_surface > 0.0) {
 			double sed_to_neigh = (patch[0].surface_innundation_list[d].neighbours[j].gamma
 				* sed_leached_to_surface) / neigh[0].area;
-			if (neigh[0].drainage_type == STREAM)
+			double g = patch[0].surface_innundation_list[d].neighbours[j].gamma / neigh[0].area;
+			if (neigh[0].drainage_type == STREAM) {
 				neigh[0].streamflow_sediment += sed_to_neigh;
-			else
+				neigh[0].streamflow_sedC += g * sedC_leached_to_surface;
+				neigh[0].streamflow_sedN += g * sedN_leached_to_surface;
+			} else {
 				neigh[0].surface_sediment += sed_to_neigh;
+				neigh[0].surface_sedC += g * sedC_leached_to_surface;
+				neigh[0].surface_sedN += g * sedN_leached_to_surface;
+			}
 			}
 		/*--------------------------------------------------------------*/
 		/*	- now surface water 					*/

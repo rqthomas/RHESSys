@@ -39,6 +39,7 @@ void compute_subsurface_routing(struct command_line_object *command_line,
 	/*--------------------------------------------------------------*/
 	/*	Local function definition.				*/
 	/*--------------------------------------------------------------*/
+	double	sediment_export_scale(struct patch_object *, double, double);
 
 	void update_drainage_stream(struct patch_object *,
 			struct command_line_object *, double, int);
@@ -169,6 +170,8 @@ void compute_subsurface_routing(struct command_line_object *command_line,
 
 		/* zero-initialise sediment routing fields each timestep */
 		patch[0].streamflow_sediment = 0.0;
+		patch[0].streamflow_sedC = 0.0;
+		patch[0].streamflow_sedN = 0.0;
 
 		if (grow_flag > 0) {
 			patch[0].soil_ns.NO3_Qin = 0.0;
@@ -519,13 +522,18 @@ void compute_subsurface_routing(struct command_line_object *command_line,
 									/ patch[0].detention_store)
 									* patch[0].surface_NH4;
 						}
-						/* route sediment proportional to overland flow */
-						patch[0].streamflow_sediment += (excess
-									/ patch[0].detention_store)
-									* patch[0].surface_sediment;
-						patch[0].surface_sediment -= (excess
-									/ patch[0].detention_store)
-									* patch[0].surface_sediment;
+						/* route sediment proportional to overland flow, within the
+						   slope-dependent transport capacity (sediment_export_scale) */
+						{
+						double sf = (excess / patch[0].detention_store);
+						sf *= sediment_export_scale(patch, excess, sf);
+						patch[0].streamflow_sediment += sf * patch[0].surface_sediment;
+						patch[0].surface_sediment -= sf * patch[0].surface_sediment;
+						patch[0].streamflow_sedC += sf * patch[0].surface_sedC;
+						patch[0].streamflow_sedN += sf * patch[0].surface_sedN;
+						patch[0].surface_sedC -= sf * patch[0].surface_sedC;
+						patch[0].surface_sedN -= sf * patch[0].surface_sedN;
+						}
 						patch[0].return_flow += excess;
 						patch[0].detention_store -= excess;
 						patch[0].Qout_total += excess;
@@ -547,6 +555,9 @@ void compute_subsurface_routing(struct command_line_object *command_line,
 							d = 0;
 						}
 
+						/* share of the requested sediment export allowed by the
+						   slope-dependent transport capacity (1 when off) */
+						double sed_sf = sediment_export_scale(patch, excess, excess / patch[0].detention_store);
 						for (j = 0; j < patch->surface_innundation_list[d].num_neighbours; j++) {
 							neigh = patch->surface_innundation_list[d].neighbours[j].patch;
 							Qout = excess * patch->surface_innundation_list[d].neighbours[j].gamma;
@@ -588,10 +599,14 @@ void compute_subsurface_routing(struct command_line_object *command_line,
 									neigh[0].surface_ns_leach += (Nout
 											* patch[0].area / neigh[0].area);
 								}
-								neigh[0].streamflow_sediment += (Qout
+								neigh[0].streamflow_sediment += sed_sf * (Qout
 											/ patch[0].detention_store)
 											* patch[0].surface_sediment
 											* patch[0].area / neigh[0].area;
+								neigh[0].streamflow_sedC += sed_sf * (Qout / patch[0].detention_store)
+											* patch[0].surface_sedC * patch[0].area / neigh[0].area;
+								neigh[0].streamflow_sedN += sed_sf * (Qout / patch[0].detention_store)
+											* patch[0].surface_sedN * patch[0].area / neigh[0].area;
 							} else {
 								neigh[0].Qin_total += Qout * patch[0].area
 										/ neigh[0].area;
@@ -610,10 +625,14 @@ void compute_subsurface_routing(struct command_line_object *command_line,
 											* patch[0].area / neigh[0].area);
 
 								}
-								neigh[0].surface_sediment += (Qout
+								neigh[0].surface_sediment += sed_sf * (Qout
 											/ patch[0].detention_store)
 											* patch[0].surface_sediment
 											* patch[0].area / neigh[0].area;
+								neigh[0].surface_sedC += sed_sf * (Qout / patch[0].detention_store)
+											* patch[0].surface_sedC * patch[0].area / neigh[0].area;
+								neigh[0].surface_sedN += sed_sf * (Qout / patch[0].detention_store)
+											* patch[0].surface_sedN * patch[0].area / neigh[0].area;
 							}
 						}
 						if (grow_flag > 0) {
@@ -635,10 +654,12 @@ void compute_subsurface_routing(struct command_line_object *command_line,
 									/ patch[0].detention_store)
 									* patch[0].surface_NO3;
 						}
-						/* route sediment proportional to overland flow */
-						patch[0].surface_sediment -= (excess
+						/* route sediment proportional to overland flow (within capacity) */
+						patch[0].surface_sediment -= sed_sf * (excess
 									/ patch[0].detention_store)
 									* patch[0].surface_sediment;
+						patch[0].surface_sedC -= sed_sf * (excess / patch[0].detention_store) * patch[0].surface_sedC;
+						patch[0].surface_sedN -= sed_sf * (excess / patch[0].detention_store) * patch[0].surface_sedN;
 						patch[0].detention_store -= excess;
 						patch[0].Qout_total += excess;
 					}

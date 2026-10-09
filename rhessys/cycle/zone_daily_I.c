@@ -702,6 +702,11 @@ void zone_daily_I(
 		if ( temp != -999.0 ) zone[0].ndep_NH4 = temp;
 	}
 		else zone[0].ndep_NH4 = 0.0;
+	/* -spinmode: N deposition multiplier during the spin-up period */
+	if (command_line[0].spin_active == 1) {
+		if (zone[0].ndep_NO3 != -999.0) zone[0].ndep_NO3 *= command_line[0].spin_ndep_mult;
+		if (zone[0].ndep_NH4 != -999.0) zone[0].ndep_NH4 *= command_line[0].spin_ndep_mult;
+	}
 	/*--------------------------------------------------------------*/
 	/*	CO2 -ppm - atmospheric CO2  concentration time series	*/
 	/*--------------------------------------------------------------*/

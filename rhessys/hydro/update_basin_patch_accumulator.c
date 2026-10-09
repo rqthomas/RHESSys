@@ -91,6 +91,8 @@ void update_basin_patch_accumulator(
 							* scale;
 					basin[0].acc_month.stream_DOC += patch[0].streamflow_DOC
 							* scale;
+					basin[0].acc_month.stream_POC += (patch[0].streamflow_POC + patch[0].streamflow_sedC) * scale;
+					basin[0].acc_month.stream_PON += (patch[0].streamflow_PON + patch[0].streamflow_sedN) * scale;
 					basin[0].acc_month.psn += patch[0].net_plant_psn * scale;
 					basin[0].acc_month.lai += patch[0].lai * scale;
 					basin[0].acc_month.leach += (patch[0].soil_ns.leach
@@ -124,6 +126,8 @@ void update_basin_patch_accumulator(
 							* scale;
 					basin[0].acc_year.stream_DOC += patch[0].streamflow_DOC
 							* scale;
+					basin[0].acc_year.stream_POC += (patch[0].streamflow_POC + patch[0].streamflow_sedC) * scale;
+					basin[0].acc_year.stream_PON += (patch[0].streamflow_PON + patch[0].streamflow_sedN) * scale;
 					basin[0].acc_year.psn += patch[0].net_plant_psn * scale;
 					basin[0].acc_year.PET += (patch[0].PE + patch[0].PET)
 							* scale;

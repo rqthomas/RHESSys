@@ -224,12 +224,19 @@ void		hillslope_hourly(
   		for ( i=0 ; i<hillslope[0].num_zones ; i++ ){
 			for	 (j =0; j < hillslope[0].zones[i][0].num_patches ; j++) {
 				patch = hillslope[0].zones[i][0].patches[j];
-				if (patch[0].soil_defaults[0][0].ID == 42) {
+				if ((patch[0].soil_defaults[0][0].ID == 42) || (patch[0].soil_defaults[0][0].soil_riparian > 0.0)) {
+#ifdef N_BUDGET
+						{ extern double nb_ext_gw_in;
+						  nb_ext_gw_in += gw_Qout_ratio * (hillslope[0].gw.NH4 + hillslope[0].gw.NO3 + hillslope[0].gw.DON) * hillslope[0].area / hillslope[0].riparian_area * patch[0].area; }
+#endif
+						/* solutes: the share of the gw store discharged this hour (gw_Qout_ratio),
+						   spread over the riparian area (was also multiplied by hourly_gw_Qout,
+						   a water depth, so most gw N/DOC leaving the store vanished; fixed 2026-10-08) */
 						patch[0].sat_deficit -= hourly_gw_Qout;
-						patch[0].soil_ns.sminn += hourly_gw_Qout * gw_Qout_ratio * hillslope[0].gw.NH4;
-						patch[0].soil_ns.nitrate += hourly_gw_Qout * gw_Qout_ratio * hillslope[0].gw.NO3;
-						patch[0].soil_ns.DON += hourly_gw_Qout * gw_Qout_ratio * hillslope[0].gw.DON;
-						patch[0].soil_cs.DOC += hourly_gw_Qout * gw_Qout_ratio * hillslope[0].gw.DOC;
+						patch[0].soil_ns.sminn += gw_Qout_ratio * hillslope[0].gw.NH4 * hillslope[0].area / hillslope[0].riparian_area;
+						patch[0].soil_ns.nitrate += gw_Qout_ratio * hillslope[0].gw.NO3 * hillslope[0].area / hillslope[0].riparian_area;
+						patch[0].soil_ns.DON += gw_Qout_ratio * hillslope[0].gw.DON * hillslope[0].area / hillslope[0].riparian_area;
+						patch[0].soil_cs.DOC += gw_Qout_ratio * hillslope[0].gw.DOC * hillslope[0].area / hillslope[0].riparian_area;
 						}
 			}
 		}

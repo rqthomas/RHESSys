@@ -407,6 +407,8 @@ struct accumulate_patch_object
    double snowpack;
    double sm_deficit;
    double stream_DOC;
+   double stream_POC;
+   double stream_PON;
    double stream_DON;
    double stream_NO3;
    double stream_NH4;
@@ -537,13 +539,53 @@ double lateral_DOC; /* kg C/day */
 double sediment_in;  /* kg/day - sediment received from upstream + lateral */
 double sediment_out; /* kg/day - sediment leaving reach outlet */
 double lateral_sediment; /* kg/day - sediment from lateral input patches (excludes upstream reaches) */
+double POC_in, POC_out, PON_in, PON_out;  /* kg/day - leaf litter POC/PON, conservative pass-through */
+double lateral_POC, lateral_PON;          /* kg/day - from lateral input patches */
+double lateral_POC_labile, lateral_PON_labile; /* kg/day - labile (litr1) part */
+double lateral_POC_sed, lateral_PON_sed;  /* kg/day - soil organic matter carried with eroded sediment (included in lateral_POC/PON) */
+/* in-stream storage and processing (-strbgc; compute_stream_bgc.c) */
+double benthic_POC, benthic_PON;          /* kg - streambed coarse organic matter + biofilm (state) */
+double Q_bf;                              /* m3/day - bankfull discharge from the reach geometry */
+double POC_deposit, POC_entrain;          /* kg C/day */
+double Frag_C, Frag_N;                    /* kg/day - fragmentation to DOC/DON */
+double DOM_dec_C;                         /* kg C/day - DOC decomposed */
+double N_mineral, N_immob;                /* kg N/day - net mineralization to NH4 / immobilization from NH4+NO3 */
+double N_limit;                           /* 0-1 - decomposition scaling for N supply (1 = not limited) */
+double stream_CO2;                        /* kg C/day - respired */
+double stream_denitrif;                   /* kg N/day - denitrified */
+double Bed_mic_C;                         /* kg C/day - streambed C decomposed by attached microbes */
+double Bed_N_mineral, Bed_N_immob;        /* kg N/day - their net mineralization to NH4 / immobilization from NH4+NO3 */
+double Bed_N_limit;                       /* 0-1 - share of their potential breakdown the N supply allowed */
+double wc_NO3, wc_NH4, wc_DON, wc_DOC;     /* kg - water-column stores (well-mixed reach water; state) */
+double wc_POC, wc_PON;                     /* kg - suspended POC/PON in the reach water (state) */
+double V_water;                            /* m3 - reach water volume (alfa Q^0.6 x length) */
 };
 
 struct stream_list_object
         {
         int num_reaches;
+        int bgc_flag;                   /* 1 = in-stream processing on (-strbgc) */
         double streamflow;
         struct stream_network_object *stream_network;
+        };
+/*----------------------------------------------------------*/
+/*      In-stream processing parameters (-strbgc <file>)    */
+/*----------------------------------------------------------*/
+struct stream_bgc_defaults
+        {
+        double theta;      /* temperature coefficient, fT = theta^(T-20) */
+        double v_dep;      /* m/day - deposition velocity of suspended POC/PON */
+        double k_frag;     /* 1/day at 20 C - fragmentation of benthic POC/PON to DOC/DON */
+        double e_max;      /* 1/day - entrainment rate at bankfull */
+        double export_p;   /* (DIM) - entrainment exponent on Q/Q_bf */
+        double vf_DOM;     /* m/day - DOM decomposition uptake velocity */
+        double CUE;        /* (DIM) - microbial carbon use efficiency */
+        double CN_mic;     /* kgC/kgN - microbial biomass C:N */
+        double vf_N;       /* m/day - supply of NH4+NO3 for immobilization */
+        double vf_denit;   /* m/day - denitrification uptake velocity */
+        double f_mic;      /* (DIM) - share of streambed breakdown done by attached microbes (rest -> DOC/DON) */
+        int num_lake_reaches;  /* reaches inside a lake/reservoir: no in-stream processing (pass-through) */
+        int *lake_reaches;     /* their reach IDs (stream_bgc_lake_reaches <file> in the -strbgc file) */
         };
 /*----------------------------------------------------------*/
 /*      Define target object                                */
@@ -1209,6 +1251,7 @@ struct  landuse_default
 	double  salience_10km2km_prob;			/* 0-1 */
 	double  salience_10km5km_prob;			/* 0-1 */
 	double  salience_10km10km_prob;			/* 0-1 */
+	double  stream_litter_overhang;			/* multiplier on channel area (top width x length) receiving leaf litterfall from stream-side patches; 0 = off */
 
         double  fertilizer_NO3;                                 /* kg/m2/day    */
         double  fertilizer_NH4;                                 /* kg/m2/day    */
@@ -1279,6 +1322,15 @@ struct	soil_default
 	double  denitrif_proportion;				/* (DIM) 0-1 */
 	double  nitrif_proportion;				/* (DIM) 0-1, scales maximum nitrification rate */
 	double	DON_production_rate;					/* (DIM) 0-1 */
+	double	gw_DOM_recharge_frac;				/* (DIM) 0-1: groundwater recharge carries this fraction of the soil-water DOM concentration (0 = only surface DOM, the original behaviour) */
+	double	soil_riparian;				/* 1 = riparian patch: with -gwtoriparian, hillslope groundwater discharges into these patches' saturated zone (soil ID 42 is also riparian, as before) */
+	double	cover_litter_a;				/* m2/kgC: litter cover term in the erosion C factor, exp(-a * litter C) (0 = off) */
+	double	splash_saturated_factor;	/* 0-1: rainsplash multiplier on days the soil is saturated to the surface (water film shields the soil; 1 = off) */
+	double	sediment_transport_litter_b;	/* m2/kgC: litter (mulch) reduces transport capacity, x exp(-b * surface litter C); fire that consumes litter raises it */
+	double	sediment_transport_slope_exp;	/* gamma: overland-flow transport capacity Tc = c * Qout^1.5 * sin(slope)^gamma on every patch (0 = off: legacy, cap on stream patches only, no slope) */
+	double	sediment_OC_mixing_mass;		/* kg soil/m2: eroded sediment takes the fraction rainsplash/mass of each soil pool (0 = use sediment_OC_frac) */
+	double	sediment_OC_frac;				/* kgC/kg sediment: soil organic C detached with eroded sediment (0 = off) */
+	double	gw_DOC_recharge_max;				/* mg C/L: cap on the DOC concentration of that recharge (sorption in deeper horizons); <= 0 = no cap. DON moves at the soil DON:DOC ratio; the excess stays in the soil DOM pools */
 	double	gl_c;						/* m/s */
 	double	gsurf_slope;					/* (DIM) */
 	double  gsurf_intercept;				/* m/s */
@@ -1992,6 +2044,15 @@ struct patch_object
         double  streamflow_NH4;         /* kg/m2/day    */
         double  surface_sediment;       /* kg/m2 - mobilized sediment pool */
         double  streamflow_sediment;    /* kg/m2/day - daily sediment flux to stream */
+        double  streamflow_POC;         /* kgC/m2/day - leaf litter falling into the channel (stream-side patches) */
+        double  streamflow_PON;         /* kgN/m2/day */
+        double  streamflow_POC_labile;  /* kgC/m2/day - labile (litr1) part of streamflow_POC */
+        double  streamflow_PON_labile;  /* kgN/m2/day */
+        double  stream_litter_frac;     /* 0-1 - share of the patch's leaf litterfall that lands in the channel */
+        double  surface_sedC;           /* kgC/m2 - soil organic C carried by surface_sediment (state) */
+        double  surface_sedN;           /* kgN/m2 - soil organic N carried by surface_sediment (state) */
+        double  streamflow_sedC;        /* kgC/m2/day - sediment-borne organic C delivered to the stream */
+        double  streamflow_sedN;        /* kgN/m2/day */
         double  road_cut_depth;         /* m */
         double  rain_throughfall;       /* m water      */
         double  recharge;       /* m water      */
@@ -2369,6 +2430,12 @@ struct  command_line_object
         int             routing_flag;
         int             surface_routing_flag;
         int             stream_routing_flag;
+        int             stream_bgc_flag;       /* -strbgc <file>: in-stream storage and processing */
+        int             spinmode_flag;         /* -spinmode <ndep_mult> <years>: accelerated spin-up period */
+        int             spin_active;           /* 1 while the spin-up period lasts (set daily in execute_tec) */
+        double          spin_ndep_mult;        /* N deposition multiplier during the spin-up period */
+        double          spin_years;            /* length of the spin-up period from the run start (years) */
+        long            spin_end_julday;       /* julian day the spin-up period ends (0 = not yet computed) */
         int             gwtoriparian_flag;
         int             reservoir_operation_flag;
         int             ddn_routing_flag;
@@ -2408,6 +2475,8 @@ struct  command_line_object
         char    routing_filename[FILEPATH_LEN];
         char    surface_routing_filename[FILEPATH_LEN];
         char    stream_routing_filename[FILEPATH_LEN];
+        char    stream_bgc_filename[FILEPATH_LEN];
+        struct stream_bgc_defaults *stream_bgc;
         char    reservoir_operation_filename[FILEPATH_LEN];
         char    world_filename[FILEPATH_LEN];
         char    redefine_filename[FILEPATH_LEN];

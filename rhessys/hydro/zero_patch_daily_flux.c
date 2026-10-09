@@ -184,6 +184,10 @@ int zero_patch_daily_flux( struct patch_object *patch,
 	ndf->sminn_to_nitrate = 0.0;
 	ndf->nfix_to_sminn = 0.0;
 	ndf->DON_to_gw = 0.0;
+	patch[0].streamflow_POC = 0.0;
+	patch[0].streamflow_PON = 0.0;
+	patch[0].streamflow_POC_labile = 0.0;
+	patch[0].streamflow_PON_labile = 0.0;
 	ndf->N_to_gw = 0.0;
 
 	/*-------------------------------

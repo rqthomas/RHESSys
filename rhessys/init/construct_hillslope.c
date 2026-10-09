@@ -217,7 +217,10 @@ struct hillslope_object *construct_hillslope(
 			base_station_ncheader, world);
 		for	 (j =0; j < hillslope[0].zones[i][0].num_patches ; j++) {
 			hillslope[0].area += hillslope[0].zones[i][0].patches[j][0].area;
-			if (hillslope[0].zones[i][0].patches[j][0].soil_defaults[0][0].ID == 42) 
+			/* riparian patches (soil ID 42, or soil def soil_riparian = 1) receive the
+			   hillslope groundwater discharge with -gwtoriparian */
+			if ((hillslope[0].zones[i][0].patches[j][0].soil_defaults[0][0].ID == 42)
+				|| (hillslope[0].zones[i][0].patches[j][0].soil_defaults[0][0].soil_riparian > 0.0))
 				hillslope[0].riparian_area += hillslope[0].zones[i][0].patches[j][0].area;
 			hillslope[0].slope += hillslope[0].zones[i][0].patches[j][0].slope *
 					hillslope[0].zones[i][0].patches[j][0].area;

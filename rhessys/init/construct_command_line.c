@@ -39,6 +39,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "rhessys.h"
+struct stream_bgc_defaults *construct_stream_bgc_defaults(char *);
 struct	command_line_object	*construct_command_line(
 													int main_argc,
 													char **main_argv)
@@ -77,6 +78,13 @@ struct	command_line_object	*construct_command_line(
 	command_line[0].routing_flag = 0;
 	command_line[0].surface_routing_flag = 0;
 	command_line[0].stream_routing_flag = 0;
+	command_line[0].stream_bgc_flag = 0;
+	command_line[0].stream_bgc = NULL;
+	command_line[0].spinmode_flag = 0;
+	command_line[0].spin_active = 0;
+	command_line[0].spin_ndep_mult = 1.0;
+	command_line[0].spin_years = 0.0;
+	command_line[0].spin_end_julday = 0;
 	command_line[0].reservoir_operation_flag = 0;
 	command_line[0].clim_repeat_flag = 0;
 	command_line[0].dclim_flag = 0;
@@ -718,6 +726,43 @@ printf("%s ",command_line[0].WUI_filename);
 
 
 			/*--------------------------------------------------------------*/
+			/*	-strbgc <file>: in-stream storage and processing parameters	*/
+			/*--------------------------------------------------------------*/
+			else if ( strcmp(main_argv[i],"-strbgc") == 0 ){
+				i++;
+				if ((i == main_argc) || (valid_option(main_argv[i])==1) ){
+					fprintf(stderr,"FATAL ERROR: -strbgc parameter file name not specified\n");
+					exit(EXIT_FAILURE);
+				}
+				command_line[0].stream_bgc_flag = 1;
+				strcpy(command_line[0].stream_bgc_filename, main_argv[i]);
+				command_line[0].stream_bgc = construct_stream_bgc_defaults(main_argv[i]);
+				i++;
+			}
+
+			/*--------------------------------------------------------------*/
+			/*	-spinmode <ndep_mult> <years>: for the first <years> years	*/
+			/*	of the run N deposition is multiplied by <ndep_mult> and	*/
+			/*	erosion detachment is off (accelerated spin-up)			*/
+			/*--------------------------------------------------------------*/
+			else if ( strcmp(main_argv[i],"-spinmode") == 0 ){
+				if ((i + 2 >= main_argc) || (valid_option(main_argv[i+1]) == 1) || (valid_option(main_argv[i+2]) == 1)) {
+					fprintf(stderr,"FATAL ERROR: -spinmode needs <ndep_mult> <years>\n");
+					exit(EXIT_FAILURE);
+				}
+				command_line[0].spin_ndep_mult = atof(main_argv[i+1]);
+				command_line[0].spin_years = atof(main_argv[i+2]);
+				if ((command_line[0].spin_ndep_mult < 0.0) || (command_line[0].spin_years <= 0.0)) {
+					fprintf(stderr,"FATAL ERROR: -spinmode <ndep_mult> must be >= 0 and <years> > 0\n");
+					exit(EXIT_FAILURE);
+				}
+				command_line[0].spinmode_flag = 1;
+				printf("Spin-up mode: N deposition x %g and erosion off for the first %g years\n",
+					command_line[0].spin_ndep_mult, command_line[0].spin_years);
+				i += 3;
+			}
+
+			/*--------------------------------------------------------------*/
 			/*		Check if the reservoir option file is next.				*/
 			/*--------------------------------------------------------------*/
 			else if ( strcmp(main_argv[i],"-res") == 0 ){
@@ -1327,5 +1372,10 @@ printf("%s ",command_line[0].WUI_filename);
 			*/
 
 
+	if ((command_line[0].stream_bgc_flag == 1) &&
+		((command_line[0].stream_routing_flag != 1) || (command_line[0].grow_flag <= 0))) {
+		fprintf(stderr, "FATAL ERROR: -strbgc needs stream routing (-str) and growth mode (-g)\n");
+		exit(EXIT_FAILURE);
+	}
 	return(command_line);
 } /*end construct_command_line*/

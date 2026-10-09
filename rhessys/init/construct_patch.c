@@ -422,6 +422,12 @@ struct patch_object *construct_patch(
 	patch[0].surface_DOC = getDoubleWorldfile(&paramCnt,&paramPtr,"surface_DOC","%lf",0.0,1);
 	patch[0].surface_DON = getDoubleWorldfile(&paramCnt,&paramPtr,"surface_DON","%lf",0.0,1);
 	patch[0].surface_sediment = getDoubleWorldfile(&paramCnt,&paramPtr,"surface_sediment","%lf",0.0,1);
+	patch[0].surface_sedC = getDoubleWorldfile(&paramCnt,&paramPtr,"surface_sedC","%lf",0.0,1);
+	patch[0].surface_sedN = getDoubleWorldfile(&paramCnt,&paramPtr,"surface_sedN","%lf",0.0,1);
+	patch[0].streamflow_sedC = 0.0; patch[0].streamflow_sedN = 0.0;
+	patch[0].stream_litter_frac = 0.0;   /* set for stream-side patches in construct_stream_routing_topology */
+	patch[0].streamflow_POC = 0.0; patch[0].streamflow_PON = 0.0;
+	patch[0].streamflow_POC_labile = 0.0; patch[0].streamflow_PON_labile = 0.0;
 	patch[0].fertilizer_NO3 = getDoubleWorldfile(&paramCnt,&paramPtr,"fertilizer_NO3","%lf",0.0,1);
 	patch[0].fertilizer_NH4 = getDoubleWorldfile(&paramCnt,&paramPtr,"fertilizer_NH4","%lf",0.0,1);
 	/* previous day's soil temperature; read before it is set on the first day */

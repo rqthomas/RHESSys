@@ -574,11 +574,17 @@ void  update_drainage_road(
 			}
 		/* route road surface sediment to stream with detention overflow */
 		if (patch[0].surface_sediment > 0.0) {
+			double sediment_export_scale(struct patch_object *, double, double);
 			double sed_frac = min(1.0, (Qout / patch[0].detention_store));
+			sed_frac *= sediment_export_scale(patch, Qout, sed_frac);
 			double sed_out  = sed_frac * patch[0].surface_sediment;
 			patch[0].surface_sediment -= sed_out;
 			patch[0].next_stream[0].streamflow_sediment +=
 				(sed_out * patch[0].area / patch[0].next_stream[0].area);
+			patch[0].next_stream[0].streamflow_sedC += sed_frac * patch[0].surface_sedC * patch[0].area / patch[0].next_stream[0].area;
+			patch[0].next_stream[0].streamflow_sedN += sed_frac * patch[0].surface_sedN * patch[0].area / patch[0].next_stream[0].area;
+			patch[0].surface_sedC -= sed_frac * patch[0].surface_sedC;
+			patch[0].surface_sedN -= sed_frac * patch[0].surface_sedN;
 			}
 		patch[0].next_stream[0].streamflow += (Qout * patch[0].area / patch[0].next_stream[0].area);
 		patch[0].next_stream[0].hourly_sur2stream_flow += Qout *  patch[0].area / patch[0].next_stream[0].area;
@@ -618,6 +624,10 @@ void  update_drainage_road(
 		patch[0].next_stream[0].streamflow_sediment +=
 			(patch[0].surface_sediment * patch[0].area / patch[0].next_stream[0].area);
 		patch[0].surface_sediment = 0.0;
+		patch[0].next_stream[0].streamflow_sedC += patch[0].surface_sedC * patch[0].area / patch[0].next_stream[0].area;
+		patch[0].next_stream[0].streamflow_sedN += patch[0].surface_sedN * patch[0].area / patch[0].next_stream[0].area;
+		patch[0].surface_sedC = 0.0;
+		patch[0].surface_sedN = 0.0;
 		}
 
 	/*--------------------------------------------------------------*/

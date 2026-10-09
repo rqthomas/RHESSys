@@ -83,6 +83,41 @@ int update_gw_drainage(
 	patch[0].detention_store -= drainage;
 	patch[0].gw_drainage = drainage;
 	hillslope[0].gw.storage += (drainage * patch[0].area / hillslope[0].area);
+	/*------------------------------------------------------*/
+	/*	soil DOM carried by the recharge water: a fraction	*/
+	/*	(gw_DOM_recharge_frac) of the soil-water DOC/DON	*/
+	/*	concentration, debited from the soil pools. Without	*/
+	/*	it groundwater only receives surface DOM, so		*/
+	/*	baseflow carries almost no DOC between storms.		*/
+	/*------------------------------------------------------*/
+	if ((patch[0].soil_defaults[0][0].gw_DOM_recharge_frac > ZERO) && (drainage > ZERO)) {
+		double soil_water = patch[0].soil_defaults[0][0].soil_water_cap - patch[0].sat_deficit
+			+ patch[0].rz_storage + patch[0].unsat_storage;
+		if (soil_water > ZERO) {
+			double f = min(1.0, patch[0].soil_defaults[0][0].gw_DOM_recharge_frac * drainage / soil_water);
+			double doc = (patch[0].soil_cs.DOC > ZERO) ? f * patch[0].soil_cs.DOC : 0.0;
+			double don = (patch[0].soil_ns.DON > ZERO) ? f * patch[0].soil_ns.DON : 0.0;
+			/* cap the recharge DOC concentration (mg C/L = g/m3; drainage in m) and move
+			   DON in the same proportion; what is not moved stays in the soil DOM pools */
+			if ((patch[0].soil_defaults[0][0].gw_DOC_recharge_max > 0.0) && (doc > ZERO)) {
+				double doc_max = patch[0].soil_defaults[0][0].gw_DOC_recharge_max * drainage / 1000.0; /* kg C/m2 */
+				if (doc > doc_max) {
+					don *= doc_max / doc;
+					doc = doc_max;
+				}
+			}
+			if (doc > 0.0) {
+				hillslope[0].gw.DOC += (doc * patch[0].area / hillslope[0].area);
+				patch[0].cdf.DOC_to_gw += doc;
+				patch[0].soil_cs.DOC -= doc;
+			}
+			if (don > 0.0) {
+				hillslope[0].gw.DON += (don * patch[0].area / hillslope[0].area);
+				patch[0].ndf.DON_to_gw += don;
+				patch[0].soil_ns.DON -= don;
+			}
+		}
+	}
 
 	/*------------------------------------------------------*/
 	/*	determine associated N leached			*/

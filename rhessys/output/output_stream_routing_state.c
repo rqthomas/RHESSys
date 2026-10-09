@@ -63,6 +63,20 @@ void	output_stream_routing_state(
 				reach->previous_Qin);
 		}
 	}
+	/* in-stream processing stores (-strbgc only) */
+	for (b=0; b < world[0].num_basin_files; b++) {
+		stream_list = &(world[0].basins[b][0].stream_list);
+		if ((stream_list->stream_network == NULL) || (stream_list->bgc_flag != 1)) continue;
+		fprintf(outfile, "\nstream_benthic_state");
+		fprintf(outfile, "\n   %-30d %s", world[0].basins[b][0].ID, "basin_ID");
+		fprintf(outfile, "\n   %-30d %s", stream_list->num_reaches, "num_stream_reaches");
+		for (i=0; i < stream_list->num_reaches; i++) {
+			reach = &(stream_list->stream_network[i]);
+			fprintf(outfile, "\n   %d %.17g %.17g %.17g %.17g %.17g %.17g %.17g %.17g", reach->reach_ID,
+				reach->benthic_POC, reach->benthic_PON, reach->wc_NO3, reach->wc_NH4,
+				reach->wc_DON, reach->wc_DOC, reach->wc_POC, reach->wc_PON);
+		}
+	}
 	fprintf(outfile, "\n");
 	return;
 } /*end output_stream_routing_state*/

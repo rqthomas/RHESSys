@@ -137,6 +137,19 @@ void		hillslope_daily_F(
 			  basin[0].defaults[0][0].n_routing_timesteps,
 			  current_date
       );
+#ifdef N_BUDGET
+		{	/* debug N budget: today's patch exports to streams, now that routing is done */
+			extern double nb_ext_stream, nb_ext_stream_sed;
+			int z, pp;
+			for (z = 0; z < hillslope[0].num_zones; z++)
+				for (pp = 0; pp < hillslope[0].zones[z][0].num_patches; pp++) {
+					struct patch_object *pt = hillslope[0].zones[z][0].patches[pp];
+					nb_ext_stream += (pt[0].streamflow_NO3 + pt[0].streamflow_NH4 + pt[0].streamflow_DON
+						+ pt[0].streamflow_sedN + pt[0].streamflow_PON) * pt[0].area;
+					nb_ext_stream_sed += pt[0].streamflow_sedN * pt[0].area;
+				}
+		}
+#endif
     }
 
 	/*----------------------------------------------------------------------*/

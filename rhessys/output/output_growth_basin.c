@@ -63,7 +63,7 @@ void	output_growth_basin(
 	double acarbon_balance, anitrogen_balance;
 	double atotaln, adenitrif;
 	double aNO3_stored;
-	double astreamflow_NO3, astreamflow_NH4, astreamflow_DON, astreamflow_DOC;
+	double astreamflow_NO3, astreamflow_NH4, astreamflow_DON, astreamflow_DOC, astreamflow_PON = 0.0, astreamflow_POC = 0.0;
 	double anitrif, aDOC, aDON, arootdepth;
 	double aninput, afertilizer_NO3, afertilizer_NH4;
 	double hstreamflow_NO3, hstreamflow_NH4, hstreamflow_DON, hstreamflow_DOC;
@@ -178,6 +178,8 @@ void	output_growth_basin(
 				astreamflow_NH4 += patch[0].streamflow_NH4 * patch[0].area;
 				astreamflow_NO3 += patch[0].streamflow_NO3 * patch[0].area;
 				astreamflow_DON += patch[0].streamflow_DON * patch[0].area;
+				astreamflow_PON += (patch[0].streamflow_PON + patch[0].streamflow_sedN) * patch[0].area;
+				astreamflow_POC += (patch[0].streamflow_POC + patch[0].streamflow_sedC) * patch[0].area;
 				astreamflow_DOC += patch[0].streamflow_DOC * patch[0].area;
 				streamNO3_from_surface += patch[0].streamNO3_from_surface * patch[0].area;
 				streamNO3_from_sub += patch[0].streamNO3_from_sub * patch[0].area;
@@ -365,6 +367,8 @@ void	output_growth_basin(
 	astreamflow_NH4 /= aarea;
 	astreamflow_NO3 /= aarea;
 	astreamflow_DON /= aarea;
+	astreamflow_PON /= aarea;
+	astreamflow_POC /= aarea;
 	astreamflow_DOC /= aarea;
 	streamNO3_from_surface /=aarea;
 	streamNO3_from_sub /=aarea;
@@ -402,7 +406,7 @@ void	output_growth_basin(
 	hgwDOCout = hgwDOCout / basin_area;
 
 
-	fprintf(outfile,"%d %d %d %d %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %11.9lf %11.9lf %11.9lf %11.9lf %lf %lf %lf %lf %11.9lf %11.9lf %11.9lf %11.9lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf\n",
+	fprintf(outfile,"%d %d %d %d %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %11.9lf %11.9lf %11.9lf %11.9lf %lf %lf %lf %lf %11.9lf %11.9lf %11.9lf %11.9lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf\n",
 		current_date.day,
 		current_date.month,
 		current_date.year,
@@ -466,7 +470,9 @@ void	output_growth_basin(
 		aoverstory_biomassc,
 		aoverstory_height,
 		aNO3_stored*1000,
-		alitterNO3stored*1000, aNO3_throughfall*1000.0, anvolatilized_snk*1000
+		alitterNO3stored*1000, aNO3_throughfall*1000.0, anvolatilized_snk*1000,
+		(adenitrif + astreamflow_NO3 + astreamflow_NH4 + astreamflow_DON + astreamflow_PON)*1000.0,
+		astreamflow_POC*1000.0, astreamflow_PON*1000.0
 		);
 	/*------------------------------------------*/
 	/*printf("\n Basin %d Output %4d %3d %3d \n",*/

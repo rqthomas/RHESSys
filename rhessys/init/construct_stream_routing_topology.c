@@ -150,6 +150,32 @@ struct stream_list_object construct_stream_routing_topology(
 		stream_network_ini[i].sediment_in=0.0;
 		stream_network_ini[i].sediment_out=0.0;
 		stream_network_ini[i].lateral_sediment=0.0;
+		stream_network_ini[i].POC_in=0.0; stream_network_ini[i].POC_out=0.0;
+		stream_network_ini[i].PON_in=0.0; stream_network_ini[i].PON_out=0.0;
+		stream_network_ini[i].lateral_POC=0.0; stream_network_ini[i].lateral_PON=0.0;
+		stream_network_ini[i].lateral_POC_labile=0.0; stream_network_ini[i].lateral_PON_labile=0.0;
+		stream_network_ini[i].benthic_POC=0.0; stream_network_ini[i].benthic_PON=0.0;
+		stream_network_ini[i].wc_NO3=0.0; stream_network_ini[i].wc_NH4=0.0; stream_network_ini[i].wc_DON=0.0;
+		stream_network_ini[i].wc_DOC=0.0; stream_network_ini[i].wc_POC=0.0; stream_network_ini[i].wc_PON=0.0;
+		stream_network_ini[i].V_water=0.0;
+		stream_network_ini[i].lateral_POC_sed=0.0; stream_network_ini[i].lateral_PON_sed=0.0;
+		stream_network_ini[i].POC_deposit=0.0; stream_network_ini[i].POC_entrain=0.0;
+		stream_network_ini[i].Frag_C=0.0; stream_network_ini[i].Frag_N=0.0;
+		stream_network_ini[i].DOM_dec_C=0.0; stream_network_ini[i].N_mineral=0.0;
+		stream_network_ini[i].N_immob=0.0; stream_network_ini[i].N_limit=1.0;
+		stream_network_ini[i].stream_CO2=0.0; stream_network_ini[i].stream_denitrif=0.0;
+		stream_network_ini[i].Bed_mic_C=0.0; stream_network_ini[i].Bed_N_mineral=0.0;
+		stream_network_ini[i].Bed_N_immob=0.0; stream_network_ini[i].Bed_N_limit=1.0;
+		/* bankfull discharge (m3/day): Manning on the trapezoid of the stream table */
+		{
+			double tw = stream_network_ini[i].top_width, bw = stream_network_ini[i].bottom_width;
+			double hh = stream_network_ini[i].max_height, n = stream_network_ini[i].manning;
+			double sl = (stream_network_ini[i].stream_slope > 0.0) ? stream_network_ini[i].stream_slope : 0.01;
+			double A = 0.5 * (tw + bw) * hh;
+			double P = bw + 2.0 * sqrt(hh * hh + 0.25 * (tw - bw) * (tw - bw));
+			stream_network_ini[i].Q_bf = ((A > 0.0) && (P > 0.0) && (n > 0.0))
+				? A * pow(A / P, 2.0 / 3.0) * sqrt(sl) / n * 86400.0 : 0.0;
+		}
 	
 		/*find neighbouring hillslopes by reach_ID, one hill ID is reach_ID-1, another is reach_ID*/
 		
@@ -167,6 +193,22 @@ struct stream_list_object construct_stream_routing_topology(
 				if(hillID==stream_network_ini[i].reach_ID) neighbour_hill_count_1=1;
 				
 			}
+			/* leaf litterfall into the channel: each stream-side patch of this reach sends
+			   overhang x channel area / total patch area of its litterfall to the stream */
+			{
+				double a_patches = 0.0, a_channel, frac;
+				for (j=0; j< stream_network_ini[i].num_lateral_inputs; ++j)
+					if (stream_network_ini[i].lateral_inputs[j] != NULL)
+						a_patches += stream_network_ini[i].lateral_inputs[j][0].area;
+				a_channel = stream_network_ini[i].top_width * stream_network_ini[i].length;
+				for (j=0; j< stream_network_ini[i].num_lateral_inputs; ++j) {
+					struct patch_object *p = stream_network_ini[i].lateral_inputs[j];
+					if ((p == NULL) || (a_patches <= 0.0)) continue;
+					frac = p[0].landuse_defaults[0][0].stream_litter_overhang * a_channel / a_patches;
+					frac = (frac > 1.0) ? 1.0 : frac;
+					if (frac > p[0].stream_litter_frac) p[0].stream_litter_frac = frac;
+				}
+			}
 		}
 		neighbour_hill_num=neighbour_hill_count_0+neighbour_hill_count_1;
 		
@@ -178,8 +220,11 @@ struct stream_list_object construct_stream_routing_topology(
 			stream_network_ini[i].neighbour_hill[1] = find_hillslope_in_basin(stream_network_ini[i].reach_ID,basin);
 		}
 		else if(neighbour_hill_count_0==1)stream_network_ini[i].neighbour_hill[0] = find_hillslope_in_basin(stream_network_ini[i].reach_ID-1,basin);
-		else stream_network_ini[i].neighbour_hill[0] = find_hillslope_in_basin(stream_network_ini[i].reach_ID,basin);
-        hillslope=stream_network_ini[i].neighbour_hill[0];
+		else if(neighbour_hill_count_1==1)stream_network_ini[i].neighbour_hill[0] = find_hillslope_in_basin(stream_network_ini[i].reach_ID,basin);
+		/* a reach with no hillslope IDs reach_ID-1 / reach_ID among its patches (e.g. a lake
+		   part split off a reach at the reservoir edge) gets no hillslope groundwater; the list
+		   is empty, so do not write into it (was an out-of-bounds write) */
+        hillslope = (neighbour_hill_num > 0) ? stream_network_ini[i].neighbour_hill[0] : NULL;
         stream_network_ini[i].num_neighbour_hills=neighbour_hill_num;
 		
 		fscanf(stream_file,"%d",&(stream_network_ini[i].num_upstream_neighbours));
@@ -282,6 +327,7 @@ struct stream_list_object construct_stream_routing_topology(
         /*--------------------------------------------------------------*/
 		
         stream_list.stream_network = stream_network;
+        stream_list.bgc_flag = command_line[0].stream_bgc_flag;
         return(stream_list);
 		
 	} /*end construct_stream_routing_topology.c*/	

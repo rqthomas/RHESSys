@@ -244,6 +244,10 @@ void	output_patch_state(
 	fprintf(outfile,"\n          ");
 	fprintf(outfile,"%-30.17g %s",patch[0].surface_sediment, "surface_sediment");
 	fprintf(outfile,"\n          ");
+	fprintf(outfile,"%-30.17g %s",patch[0].surface_sedC, "surface_sedC");
+	fprintf(outfile,"\n          ");
+	fprintf(outfile,"%-30.17g %s",patch[0].surface_sedN, "surface_sedN");
+	fprintf(outfile,"\n          ");
 	fprintf(outfile,"%-30.17g %s",patch[0].litter.NO3_stored, "litter.NO3_stored");
 	fprintf(outfile,"\n          ");
 	fprintf(outfile,"%-30.17g %s",patch[0].fertilizer_NO3, "fertilizer_NO3");

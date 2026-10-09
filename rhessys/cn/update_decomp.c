@@ -354,8 +354,13 @@ int update_decomp(
 	/* Fluxes from shielded to unshielded cellulose pools */
 	ns_litr->litr2n       += ndf->litr3n_to_litr2n;
 	ns_litr->litr3n       -= ndf->litr3n_to_litr2n;
-	/* this one is odd because we don't know where to get the N for shifting between litter 2 and 3 */
-	ns_soil->soil2n	      += ndf->sminn_to_soil2n_l3;
+	/* N adjustment for shifting shielded (litr3) to unshielded (litr2) cellulose: it was
+	   booked to soil2n "as repository", which gave soil2 N without C (or took N from it),
+	   pushed soil2 far from its fixed C:N (SOIL2_CN) - soil2n then went negative under
+	   decomposition at C/SOIL2_CN and check_zero_stores created N. Book it to litr2n,
+	   the pool receiving the material: litr2 gets (1 - rfl4s3) C at its own C:N
+	   (fixed 2026-10-08; the flux keeps its name) */
+	ns_litr->litr2n	      += ndf->sminn_to_soil2n_l3;
 	/* Fluxes out of lignin litter pool */
 	ns_soil->soil3n       += ndf->litr4n_to_soil3n;
 	ns_litr->litr4n       -= ndf->litr4n_to_soil3n;

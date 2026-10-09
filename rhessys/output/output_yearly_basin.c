@@ -58,7 +58,7 @@ void	output_yearly_basin(
 
 
 	check = fprintf(outfile,
-		"%d %d %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %d %lf\n",
+		"%d %d %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %d %lf %lf %lf %lf %lf %lf %lf\n",
 		current_date.year,
 		basin[0].ID,
 		basin[0].acc_year.streamflow * 1000.0,
@@ -73,7 +73,16 @@ void	output_yearly_basin(
 		basin[0].acc_year.mineralized * 1000.0,
 		basin[0].acc_year.uptake * 1000.0,
 		basin[0].acc_year.num_threshold,
-		basin[0].acc_year.PET * 1000.0
+		basin[0].acc_year.PET * 1000.0,
+		/* stream exports incl. groundwater discharge, and total N loss */
+		basin[0].acc_year.stream_NH4 * 1000.0,
+		basin[0].acc_year.stream_DON * 1000.0,
+		basin[0].acc_year.stream_DOC * 1000.0,
+		(basin[0].acc_year.denitrif + basin[0].acc_year.stream_NO3
+			+ basin[0].acc_year.stream_NH4 + basin[0].acc_year.stream_DON
+			+ basin[0].acc_year.stream_PON) * 1000.0,
+		basin[0].acc_year.stream_POC * 1000.0,
+		basin[0].acc_year.stream_PON * 1000.0
 		);
 	if (check <= 0) {
 		fprintf(stdout,
@@ -84,6 +93,11 @@ void	output_yearly_basin(
 	/*--------------------------------------------------------------*/
 	basin[0].acc_year.streamflow = 0.0;
 	basin[0].acc_year.stream_NO3 = 0.0;
+	basin[0].acc_year.stream_NH4 = 0.0;
+	basin[0].acc_year.stream_DON = 0.0;
+	basin[0].acc_year.stream_DOC = 0.0;
+	basin[0].acc_year.stream_POC = 0.0;
+	basin[0].acc_year.stream_PON = 0.0;
 	basin[0].acc_year.et = 0.0;
 	basin[0].acc_year.PET = 0.0;
 	basin[0].acc_year.psn = 0.0;

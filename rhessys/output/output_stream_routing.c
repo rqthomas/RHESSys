@@ -55,12 +55,15 @@ void	output_stream_routing(
 	/*	When grow_flag > 0, lateral input loads follow:		*/
 	/*	         lateral_NO3(kgN/day) lateral_NH4(kgN/day)	*/
 	/*	         lateral_DON(kgN/day) lateral_DOC(kgC/day)	*/
-	/*	Last (always): lateral_sediment(kg/day), sediment from	*/
+	/*	Then (always): lateral_sediment(kg/day), sediment from	*/
 	/*	         lateral input patches only			*/
+	/*	Last (always): POC_out PON_out lateral_POC lateral_PON	*/
+	/*	         lateral_POC_labile lateral_PON_labile (kg/day):	*/
+	/*	         leaf litter from stream-side patches		*/
 	/*--------------------------------------------------------------*/
 
 	if (command_line[0].grow_flag > 0) {
-		fprintf(outfile, "%d %d %d %d %lf %lf %lf %lf %lf %e %e %e %e %e %e %e %e %e %e\n",
+		fprintf(outfile, "%d %d %d %d %lf %lf %lf %lf %lf %e %e %e %e %e %e %e %e %e %e %e %e %e %e %e %e %e %e",
 			date.day,
 			date.month,
 			date.year,
@@ -79,9 +82,13 @@ void	output_stream_routing(
 			stream_network[0].lateral_NH4,
 			stream_network[0].lateral_DON,
 			stream_network[0].lateral_DOC,
-			stream_network[0].lateral_sediment);
+			stream_network[0].lateral_sediment,
+			stream_network[0].POC_out, stream_network[0].PON_out,
+			stream_network[0].lateral_POC, stream_network[0].lateral_PON,
+			stream_network[0].lateral_POC_labile, stream_network[0].lateral_PON_labile,
+			stream_network[0].lateral_POC_sed, stream_network[0].lateral_PON_sed);
 	} else {
-		fprintf(outfile, "%d %d %d %d %lf %lf %lf %lf %lf %lf %lf\n", 
+		fprintf(outfile, "%d %d %d %d %lf %lf %lf %lf %lf %lf %lf %e %e %e %e %e %e %e %e", 
 			date.day,
 			date.month,
 			date.year,
@@ -92,8 +99,25 @@ void	output_stream_routing(
 			stream_network[0].water_depth,
 			stream_network[0].reservoir.initial_storage/10000,
 			stream_network[0].sediment_out,
-			stream_network[0].lateral_sediment);
+			stream_network[0].lateral_sediment,
+			stream_network[0].POC_out, stream_network[0].PON_out,
+			stream_network[0].lateral_POC, stream_network[0].lateral_PON,
+			stream_network[0].lateral_POC_labile, stream_network[0].lateral_PON_labile,
+			stream_network[0].lateral_POC_sed, stream_network[0].lateral_PON_sed);
 	}
 
+	if (command_line[0].stream_bgc_flag == 1)
+		fprintf(outfile, " %e %e %e %e %e %e %e %e %e %f %e %e %e %e %e %e %e %e %e %e %e %e %f",
+			stream_network[0].benthic_POC, stream_network[0].benthic_PON,
+			stream_network[0].POC_deposit, stream_network[0].POC_entrain,
+			stream_network[0].Frag_C, stream_network[0].Frag_N,
+			stream_network[0].DOM_dec_C, stream_network[0].N_mineral,
+			stream_network[0].N_immob, stream_network[0].N_limit,
+			stream_network[0].stream_CO2, stream_network[0].stream_denitrif,
+			stream_network[0].V_water, stream_network[0].wc_DOC, stream_network[0].wc_DON,
+			stream_network[0].wc_NO3, stream_network[0].wc_NH4, stream_network[0].wc_POC, stream_network[0].wc_PON,
+			stream_network[0].Bed_mic_C, stream_network[0].Bed_N_mineral,
+			stream_network[0].Bed_N_immob, stream_network[0].Bed_N_limit);
+	fprintf(outfile, "\n");
 	return;
 } /*end output_stream_routing*/

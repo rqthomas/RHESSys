@@ -284,6 +284,17 @@ void	execute_tec(
                     // current_date.year,current_date.month,current_date.day);
             //fflush(stdout);
 			if ( current_date.hour == 1 ){
+				/* -spinmode: is today inside the spin-up period? */
+				if (command_line[0].spinmode_flag == 1) {
+					int was_active = command_line[0].spin_active;
+					if (command_line[0].spin_end_julday == 0)
+						command_line[0].spin_end_julday = julday(world[0].start_date)
+							+ (long) (command_line[0].spin_years * 365.25 + 0.5);
+					command_line[0].spin_active = (julday(current_date) < command_line[0].spin_end_julday) ? 1 : 0;
+					if (was_active && !command_line[0].spin_active)
+						printf("\nSpin-up mode ended on %d-%d-%d: normal N deposition, erosion on\n",
+							current_date.year, current_date.month, current_date.day);
+				}
                 world_daily_I(
 					day,
 					world,

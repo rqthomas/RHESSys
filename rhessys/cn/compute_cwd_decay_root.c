@@ -47,7 +47,7 @@ int	compute_cwd_decay_root(
 	/*------------------------------------------------------*/
 
 	int ok=1;
-	double cwdc_loss, kfrag;
+	double cwdc_loss, kfrag, cwd_nc;
 	double rate_scalar;
 	/*--------------------------------------------------------------*/
 	/* calculate the flux from CWD to litter lignin and cellulose   */
@@ -65,9 +65,14 @@ int	compute_cwd_decay_root(
 	cdf->cwdc_to_litr2c_bg = cwdc_loss * epc->deadwood_fucel * cover_fraction;
 	cdf->cwdc_to_litr3c_bg = cwdc_loss * epc->deadwood_fscel * cover_fraction;
 	cdf->cwdc_to_litr4c_bg = cwdc_loss * epc->deadwood_flig * cover_fraction;
-	ndf->cwdn_to_litr2n_bg = cdf->cwdc_to_litr2c_bg/CEL_CN;
-	ndf->cwdn_to_litr3n_bg = cdf->cwdc_to_litr3c_bg/CEL_CN;
-	ndf->cwdn_to_litr4n_bg = cdf->cwdc_to_litr4c_bg/LIG_CN;
+	/* N leaves with the C at the pool's own N:C. The fixed CEL_CN/LIG_CN
+	   ratios (= epc.deadwood_cn) took more N than the wood brought in
+	   (dead wood enters at C:N ~308 vs deadwood_cn ~282), driving CWD N
+	   negative and creating litter N. */
+	cwd_nc = ((cs->cwdc_bg > ZERO) && (ns->cwdn_bg > 0.0)) ? ns->cwdn_bg / cs->cwdc_bg : 0.0;
+	ndf->cwdn_to_litr2n_bg = cdf->cwdc_to_litr2c_bg * cwd_nc;
+	ndf->cwdn_to_litr3n_bg = cdf->cwdc_to_litr3c_bg * cwd_nc;
+	ndf->cwdn_to_litr4n_bg = cdf->cwdc_to_litr4c_bg * cwd_nc;
 	/*--------------------------------------------------------------*/
 	/*	update carbon state variables				*/
 	/*--------------------------------------------------------------*/

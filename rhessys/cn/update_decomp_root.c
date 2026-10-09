@@ -270,7 +270,8 @@ int update_decomp_root(
 	ns_litr->litr2n_bg       += ndf->litr3n_to_litr2n_bg;
 	ns_litr->litr3n_bg       -= ndf->litr3n_to_litr2n_bg;
 	/* this one is odd because we don't know where to get the N for shifting between litter 2 and 3 */
-	ns_soil->soil2n	      += ndf->sminn_to_soil2n_l3_bg;
+	/* N adjustment for litr3_bg -> litr2_bg goes to the receiving pool (was soil2n; see update_decomp.c, fixed 2026-10-08) */
+	ns_litr->litr2n_bg	      += ndf->sminn_to_soil2n_l3_bg;
 	/* Fluxes out of lignin litter pool */
 	ns_soil->soil3n       += ndf->litr4n_to_soil3n_bg;
 	ns_litr->litr4n_bg       -= ndf->litr4n_to_soil3n_bg;

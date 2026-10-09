@@ -566,6 +566,7 @@ void		zone_daily_F(
 	/*--------------------------------------------------------------*/
 	if (zone[0].ndep_NO3 == -999.0){
 		zone[0].ndep_NO3 = zone[0].defaults[0][0].ndep_NO3;
+		if (command_line[0].spin_active == 1) zone[0].ndep_NO3 *= command_line[0].spin_ndep_mult;
 	}
 	/*--------------------------------------------------------------*/
 	/*	metv.tsoil - soil temperature 		(degrees C)	*/

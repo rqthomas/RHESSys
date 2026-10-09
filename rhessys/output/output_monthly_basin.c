@@ -55,7 +55,7 @@ void	output_monthly_basin(
   basin[0].acc_month.length /= patchCount;
 
 	check = fprintf(outfile,
-		"%d %d %d %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf\n",
+		"%d %d %d %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf\n",
 		current_date.month,
 		current_date.year,
 		basin[0].ID,
@@ -69,7 +69,16 @@ void	output_monthly_basin(
 		basin[0].acc_month.lai/basin[0].acc_month.length ,
 		basin[0].acc_month.nitrif * 1000.0,
 		basin[0].acc_month.mineralized * 1000.0,
-		basin[0].acc_month.uptake * 1000.0
+		basin[0].acc_month.uptake * 1000.0,
+		/* stream exports incl. groundwater discharge, and total N loss */
+		basin[0].acc_month.stream_NH4 * 1000.0,
+		basin[0].acc_month.stream_DON * 1000.0,
+		basin[0].acc_month.stream_DOC * 1000.0,
+		(basin[0].acc_month.denitrif + basin[0].acc_month.stream_NO3
+			+ basin[0].acc_month.stream_NH4 + basin[0].acc_month.stream_DON
+			+ basin[0].acc_month.stream_PON) * 1000.0,
+		basin[0].acc_month.stream_POC * 1000.0,
+		basin[0].acc_month.stream_PON * 1000.0
 		);
 	if (check <= 0) {
 		fprintf(stdout,
@@ -80,6 +89,11 @@ void	output_monthly_basin(
 	/*--------------------------------------------------------------*/
 	basin[0].acc_month.streamflow = 0.0;
 	basin[0].acc_month.stream_NO3 = 0.0;
+	basin[0].acc_month.stream_NH4 = 0.0;
+	basin[0].acc_month.stream_DON = 0.0;
+	basin[0].acc_month.stream_DOC = 0.0;
+	basin[0].acc_month.stream_POC = 0.0;
+	basin[0].acc_month.stream_PON = 0.0;
 	basin[0].acc_month.et = 0.0;
 	basin[0].acc_month.psn = 0.0;
 	basin[0].acc_month.length = 0;
