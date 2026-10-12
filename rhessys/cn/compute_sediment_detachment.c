@@ -33,6 +33,7 @@
 #include <math.h>
 #include <stdio.h>
 #include "rhessys.h"
+#include "rhessys_veg.h"
 
 void compute_sediment_detachment(
     struct patch_object        *patch,
@@ -106,6 +107,8 @@ void compute_sediment_detachment(
         if (patch[0].soil_defaults[0][0].cover_litter_a > 0.0) {
             double litrc = patch[0].litter_cs.litr1c + patch[0].litter_cs.litr2c
                          + patch[0].litter_cs.litr3c + patch[0].litter_cs.litr4c;
+            /* FATES (-demog 3): + its unfragmented dead leaves (0 otherwise) */
+            litrc += veg_host_surface_litter_c(patch);
             if (litrc > 0.0)
                 C_factor *= exp(-patch[0].soil_defaults[0][0].cover_litter_a * litrc);
         }
@@ -198,6 +201,8 @@ double sediment_export_scale(
     if (patch[0].soil_defaults[0][0].sediment_transport_litter_b > 0.0) {
         double litrc = patch[0].litter_cs.litr1c + patch[0].litter_cs.litr2c
                      + patch[0].litter_cs.litr3c + patch[0].litter_cs.litr4c;
+        /* FATES (-demog 3): + its unfragmented dead leaves (0 otherwise) */
+        litrc += veg_host_surface_litter_c(patch);
         Tc *= exp(-patch[0].soil_defaults[0][0].sediment_transport_litter_b * max(litrc, 0.0));
     }
     if (want <= Tc) return(1.0);

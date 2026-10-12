@@ -168,6 +168,14 @@ struct stratum_default *construct_stratum_defaults(
 		}
 		default_object_list[i].epc.storage_transfer_prop = getDoubleParam(&paramCnt, &paramPtr, "epc.storage_transfer_prop", "%lf", 0.7, 1);
 		default_object_list[i].epc.cpool_mort_fract = getDoubleParam(&paramCnt, &paramPtr, "epc.cpool_mort_fract", "%lf", 0.001, 1);
+		default_object_list[i].epc.hydr_mort_days0 = getDoubleParam(&paramCnt, &paramPtr, "epc.hydr_mort_days0", "%lf", 0.0, 1);
+		default_object_list[i].epc.hydr_mort_days_span = getDoubleParam(&paramCnt, &paramPtr, "epc.hydr_mort_days_span", "%lf", 300.0, 1);
+		default_object_list[i].epc.hydr_mort_psi = getDoubleParam(&paramCnt, &paramPtr, "epc.hydr_mort_psi", "%lf", -9999.0, 1);
+		if (default_object_list[i].epc.hydr_mort_psi < -9000.0) default_object_list[i].epc.hydr_mort_psi = default_object_list[i].epc.psi_close;
+		default_object_list[i].epc.hydr_mort_recovery = getDoubleParam(&paramCnt, &paramPtr, "epc.hydr_mort_recovery", "%lf", 1.0, 1);
+		default_object_list[i].epc.hydr_mort_rate = getDoubleParam(&paramCnt, &paramPtr, "epc.hydr_mort_rate", "%lf", 1.0, 1);
+		default_object_list[i].epc.starv_mort_scale = getDoubleParam(&paramCnt, &paramPtr, "epc.starv_mort_scale", "%lf", 0.0, 1);
+		default_object_list[i].epc.reserve_max_frac = getDoubleParam(&paramCnt, &paramPtr, "epc.reserve_max_frac", "%lf", 0.0, 1);
 		default_object_list[i].epc.froot_turnover = getDoubleParam(&paramCnt, &paramPtr, "epc.froot_turnover", "%lf", 0.27, 1);
 
 		if  ((default_object_list[i].epc.veg_type == GRASS) || (default_object_list[i].epc.veg_type == C4GRASS)) {

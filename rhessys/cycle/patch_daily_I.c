@@ -62,6 +62,7 @@
 /*--------------------------------------------------------------*/
 #include <stdlib.h>
 #include "rhessys.h"
+#include "rhessys_veg.h"
 #include "functions.h"
 
 void		patch_daily_I(
@@ -131,6 +132,17 @@ void		patch_daily_I(
 		double,
 		double,
 		double);
+
+	int	zero_stratum_daily_flux(
+		struct fire_effects_object *,
+		struct cdayflux_struct *,
+		struct ndayflux_struct *);
+	int	compute_cwd_decay(struct epconst_struct *, double, struct cstate_struct *,
+		struct nstate_struct *, struct litter_c_object *, struct litter_n_object *,
+		struct cdayflux_patch_struct *, struct ndayflux_patch_struct *, struct ndayflux_struct *);
+	int	compute_cwd_decay_root(struct epconst_struct *, double, struct cstate_struct *,
+		struct nstate_struct *, struct litter_c_object *, struct litter_n_object *,
+		struct cdayflux_patch_struct *, struct ndayflux_patch_struct *, struct ndayflux_struct *);
 
 	double  compute_soil_water_potential(
 		int,
@@ -467,6 +479,36 @@ void		patch_daily_I(
 				cnt += 1;
 				grazing_mean_nc += strata->ns.leafn/strata->cs.leafc * strata->cover_fraction;
 				}
+			/* FATES mode 3 (-demog <json> 3): FATES owns the plants, so the
+			   legacy vegetated strata only zero their daily fluxes (no
+			   mortality, phenology/litterfall, turnover); design doc 12 Ph 4 */
+			if ((command_line[0].demog_flag == 3) &&
+			    (patch[0].canopy_strata[(patch[0].layers[layer].strata[stratum])][0].defaults[0][0].epc.veg_type != NON_VEG)) {
+				strata = patch[0].canopy_strata[(patch[0].layers[layer].strata[stratum])];
+				if (zero_stratum_daily_flux(&(strata[0].fe), &(strata[0].cdf), &(strata[0].ndf))) {
+					fprintf(stderr, "FATAL ERROR: in zero_stratum_daily_flux() from patch_daily_I\n");
+					exit(EXIT_FAILURE);
+				}
+				/* the legacy dead wood present at the start keeps fragmenting into
+				   RHESSys litter at its calibrated rate (kfrag), as update_phenology
+				   would; no new legacy CWD forms */
+				if ((strata[0].defaults[0][0].epc.veg_type == TREE) && (command_line[0].grow_flag > 0)
+				    && (strata[0].cover_fraction > ZERO)) {
+					if ((strata[0].cs.cwdc_bg > ZERO) && compute_cwd_decay_root(&(strata[0].defaults[0][0].epc),
+						strata[0].cover_fraction, &(strata[0].cs), &(strata[0].ns), &(patch[0].litter_cs),
+						&(patch[0].litter_ns), &(patch[0].cdf), &(patch[0].ndf), &(strata[0].ndf))) {
+						fprintf(stderr, "FATAL ERROR: in compute_cwd_decay_root() from patch_daily_I\n");
+						exit(EXIT_FAILURE);
+					}
+					if ((strata[0].cs.cwdc > ZERO) && compute_cwd_decay(&(strata[0].defaults[0][0].epc),
+						strata[0].cover_fraction, &(strata[0].cs), &(strata[0].ns), &(patch[0].litter_cs),
+						&(patch[0].litter_ns), &(patch[0].cdf), &(patch[0].ndf), &(strata[0].ndf))) {
+						fprintf(stderr, "FATAL ERROR: in compute_cwd_decay() from patch_daily_I\n");
+						exit(EXIT_FAILURE);
+					}
+				}
+			}
+			else
 			canopy_stratum_daily_I(
 				world,
 				basin,
@@ -558,6 +600,9 @@ void		patch_daily_I(
 			patch[0].litter.density,
 			&(patch[0].litter_cs),
 			&(patch[0].litter));
+		/* FATES mode 3: FATES dead leaves are part of the forest floor */
+		if (command_line[0].demog_flag == 3)
+			veg_host_litter_interception(patch);
 
         /* add compute potential decomp for below ground litter carbon */
  		if (compute_potential_decomp_root(

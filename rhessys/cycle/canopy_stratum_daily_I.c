@@ -275,6 +275,83 @@ void	canopy_stratum_daily_I(
 			stratum[0].cover_fraction,
 			stratum[0].defaults[0][0].epc.branch_turnover);
 		}
+
+		/*--------------------------------------------------------------*/
+		/*	daily stress mortality (dead plants enter litter and CWD	*/
+		/*	gradually rather than in one annual pulse):			*/
+		/*	- graded carbon starvation (epc.starv_mort_scale > 0):	*/
+		/*	  annual share min(1, shortfall / (scale x live C)) / 365,	*/
+		/*	  shortfall = cpool_mort_fract x biomass - cpool;		*/
+		/*	- hydraulic stress (epc.hydr_mort_days0 > 0): index	*/
+		/*	  hydr_stress (days) +1 per leaf-on, unfrozen-soil day with psi	*/
+		/*	  <= hydr_mort_psi, -hydr_mort_recovery per other leaf-on	*/
+		/*	  day; rate hydr_mort_rate x min(1, (index - days0) /	*/
+		/*	  days_span) per year, applied as rate/365 per day.	*/
+		/*	The dying share takes its share of any carbon debt (from	*/
+		/*	the CWD it adds; labile litter for non-trees).		*/
+		/*--------------------------------------------------------------*/
+		{
+			struct epconst_struct *ep = &(stratum[0].defaults[0][0].epc);
+			double m_s = 0.0, m_h = 0.0, m;
+			/* leaf-on days with unfrozen soil only (cold soil sets psi to the closure value) */
+			if ((ep->hydr_mort_days0 > 0.0) && (stratum[0].epv.proj_lai > ZERO) && (patch[0].Tsoil > 0.0)) {
+				if (stratum[0].epv.psi <= ep->hydr_mort_psi + 1.0e-9)
+					stratum[0].epv.hydr_stress += 1.0;
+				else
+					stratum[0].epv.hydr_stress = max(0.0, stratum[0].epv.hydr_stress - ep->hydr_mort_recovery);
+			}
+			if ((command_line[0].vmort_flag == 1) && (cs->age > ep->mort_start_age)) {
+				if (ep->starv_mort_scale > 0.0) {
+					double live = cs->leafc + cs->leafc_store + cs->leafc_transfer
+						+ cs->frootc + cs->frootc_store + cs->frootc_transfer;
+					double biomass = cs->leafc + cs->frootc;
+					if (ep->veg_type == TREE) {
+						live += cs->live_stemc + cs->live_crootc + cs->livestemc_store + cs->livestemc_transfer
+							+ cs->livecrootc_store + cs->livecrootc_transfer;
+						biomass += cs->live_stemc + cs->live_crootc + cs->dead_stemc + cs->dead_crootc;
+					}
+					else biomass += cs->cpool;
+					double shortfall = ep->cpool_mort_fract * biomass - cs->cpool;
+					if ((shortfall > ZERO) && (live > ZERO))
+						m_s = min(1.0, shortfall / (ep->starv_mort_scale * live)) / 365.0;
+				}
+				if ((ep->hydr_mort_days0 > 0.0) && (stratum[0].epv.hydr_stress > ep->hydr_mort_days0)) {
+					double f = min(1.0, (stratum[0].epv.hydr_stress - ep->hydr_mort_days0) / max(ep->hydr_mort_days_span, 1.0));
+					m_h = ep->hydr_mort_rate * f / 365.0;
+				}
+			}
+			m = 1.0 - (1.0 - min(m_s, 1.0)) * (1.0 - min(m_h, 1.0));
+			if (m > 0.0) {
+				double debt0 = (cs->cpool < 0.0) ? -cs->cpool : 0.0;
+				mort.mort_cpool = m;
+				mort.mort_leafc = m;
+				mort.mort_deadleafc = m;
+				mort.mort_livestemc = m;
+				mort.mort_deadstemc = m;
+				mort.mort_livecrootc = m;
+				mort.mort_deadcrootc = m;
+				mort.mort_frootc = m;
+				cs->mortality_fract += m;
+				update_mortality(*ep,
+					&(stratum[0].cs),
+					&(stratum[0].cdf),
+					&(patch[0].cdf),
+					&(stratum[0].ns),
+					&(stratum[0].ndf),
+					&(patch[0].ndf),
+					&(patch[0].litter_cs),
+					&(patch[0].litter_ns),
+					1,
+					mort);
+				if (debt0 > 0.0) {
+					double *sink = (ep->veg_type == TREE) ? &(cs->cwdc) : &(patch[0].litter_cs.litr1c);
+					double take = m * debt0;
+					if (take > *sink) take = max(*sink, 0.0);
+					*sink -= take;
+					cs->cpool += take;
+				}
+			}
+		}
 	}
 	/*--------------------------------------------------------------*/
 	/*  perform seasonal leaf sens. and budding						*/

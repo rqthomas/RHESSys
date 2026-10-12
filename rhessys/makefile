@@ -74,6 +74,28 @@ else
 LDLIBS_FIRE = ''
 endif
 
+# --- FATES vegetation backend (optional; enable with: make fates=T) ---------
+# RHESSys = host, vegetation = pluggable backend (design doc 9.2, Phase 0).
+# The selector (fates/rhessys_veg.o) is ALWAYS built; the Fortran binding
+# (fates/rhessys_fates.o) + libfates link only when fates is defined.
+# libfates is built outside this repo from the pinned FATES tag
+# (RHESSys_development/fates: cmake -S . -B build); override FATES_DIR to move it.
+ifdef fates
+  DEFINES += -DFATES
+  ifeq ($(origin FC),default)
+    FC = gfortran
+  endif
+  FATES_DIR ?= ../../fates/build
+  FATES_INC ?= $(FATES_DIR)/mod
+  FATES_LIB ?= $(FATES_DIR)/lib
+  FFLAGS = -g -O2 -cpp -ffree-line-length-none -fopenmp -I$(FATES_INC)
+  LDLIBS_FATES = -L$(FATES_LIB) -lfates -llapack -lblas -lgfortran -lgomp
+  VEG_FORTRAN_OBJ = $(OBJ)/rhessys_fates.o
+else
+  LDLIBS_FATES =
+  VEG_FORTRAN_OBJ =
+endif
+
 SRCS := $(shell find clim cn cycle hydro init rad tec util output_filter -name '*.c')
 OBJDIR := OBJ
 
@@ -432,6 +454,10 @@ OBJECTS += $(OBJ)/output_filter_parser.tab.o \
 $(OBJ)/lex.yy.o \
 $(OBJ)/index_struct_fields.o
 
+# Vegetation-backend selector (always) + FATES Fortran binding (when fates=T)
+OBJECTS += $(OBJ)/rhessys_veg.o $(OBJ)/rhessys_veg_host.o $(OBJ)/rhessys_soil_adaptor.o \
+	$(VEG_FORTRAN_OBJ)
+
 all:	dir rhessys
 
 dir:
@@ -439,13 +465,33 @@ dir:
 	mkdir -p $(OBJDIR_TESTS)
 	mkdir -p ../lib
 
+# (kept below all: so the default goal stays all)
+# Vegetation backend: C selector (always) + FATES Fortran binding (fates=T)
+$(OBJ)/rhessys_veg.o: fates/rhessys_veg.c include/rhessys_veg.h
+	$(CC) -c $(CFLAGS) -I include fates/rhessys_veg.c -o $(OBJ)/rhessys_veg.o
+$(OBJ)/rhessys_veg_host.o: fates/rhessys_veg_host.c include/rhessys_veg.h include/rhessys_soil_adaptor.h
+	$(CC) -c $(CFLAGS) -I include fates/rhessys_veg_host.c -o $(OBJ)/rhessys_veg_host.o
+$(OBJ)/rhessys_soil_adaptor.o: fates/rhessys_soil_adaptor.c include/rhessys_soil_adaptor.h
+	$(CC) -c $(CFLAGS) -I include fates/rhessys_soil_adaptor.c -o $(OBJ)/rhessys_soil_adaptor.o
+
+# Standalone soil-adaptor test (no FATES, no world): make soil_adaptor_test
+soil_adaptor_test: Testing/soil_adaptor_test.c fates/rhessys_soil_adaptor.c include/rhessys_soil_adaptor.h
+	$(CC) $(CFLAGS) -I include Testing/soil_adaptor_test.c fates/rhessys_soil_adaptor.c \
+		hydro/compute_delta_water.c hydro/compute_z_final.c \
+		hydro/compute_soil_water_potential.c -lm -o $(OBJ)/soil_adaptor_test
+	$(OBJ)/soil_adaptor_test
+ifdef fates
+$(OBJ)/rhessys_fates.o: fates/rhessys_fates.F90 include/rhessys_veg.h
+	$(FC) -c $(FFLAGS) -I include fates/rhessys_fates.F90 -o $(OBJ)/rhessys_fates.o
+endif
+
 ifdef netcdf
 ifdef wmfire
 rhessys: $(OBJECTS) test
-	$(CC) $(OBJECTS) $(CFLAGS) -I include -lm $(LINK_NETCDF) $(LINK_FLEX) $(LOCAL_LIBS) $(LDLIBS_FIRE) -v -o $(PGM)
+	$(CC) $(OBJECTS) $(CFLAGS) -I include -lm $(LINK_NETCDF) $(LINK_FLEX) $(LOCAL_LIBS) $(LDLIBS_FIRE) $(LDLIBS_FATES) -v -o $(PGM)
 else
 rhessys: $(OBJECTS) test
-	$(CC) $(OBJECTS) $(CFLAGS) -I include -lm $(LINK_NETCDF) $(LINK_FLEX) -v -o $(PGM)
+	$(CC) $(OBJECTS) $(CFLAGS) -I include -lm $(LINK_NETCDF) $(LINK_FLEX) $(LDLIBS_FATES) -v -o $(PGM)
 endif
 else
 ifdef wmfire

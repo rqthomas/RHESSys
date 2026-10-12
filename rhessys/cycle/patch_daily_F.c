@@ -77,6 +77,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include "rhessys.h"
+#include "rhessys_veg.h"
 
 
 #ifdef N_BUDGET
@@ -626,6 +627,14 @@ void		patch_daily_F(
 	if (command_line[0].surface_energy_flag == 0)
 		patch[0].Tsoil = zone[0].metv.tsoil;
 
+	/*--------------------------------------------------------------*/
+	/*	FATES vegetation backend (-demog): hand today's boundary	*/
+	/*	conditions (soil adaptor + daylight-mean forcing) to the	*/
+	/*	backend. Read-only in Phase 1 (design doc 12).			*/
+	/*--------------------------------------------------------------*/
+	if (command_line[0].demog_flag)
+		veg_host_daily(world, basin, zone, patch, command_line, current_date);
+
 
 	patch[0].Kdown_direct = zone[0].Kdown_direct;
 	patch[0].Kdown_diffuse = zone[0].Kdown_diffuse;
@@ -855,6 +864,8 @@ void		patch_daily_F(
 					/*--------------------------------------------------------------*/
 					for ( stratum=0 ; stratum<patch[0].layers[layer].count; stratum++ ){
 					strata = patch[0].canopy_strata[(patch[0].layers[layer].strata[stratum])];
+					if (command_line[0].demog_flag == 3)	/* FATES plants: TEC management is Phase 6 */
+						continue;
 					printf("\n Removing %f of biomass for stratum %d\n", biomass_removal_percent, strata[0].ID);
 					update_mortality(strata[0].defaults[0][0].epc,
 						&(strata[0].cs),
@@ -1675,6 +1686,13 @@ void		patch_daily_F(
 	} // end if hourly rain flag
 	NB_CP(13);
 	/*--------------------------------------------------------------*/
+	/*	FATES backend (-demog): FATES transpiration; in mode 2 it	*/
+	/*	replaces the strata transpiration demand summed below	*/
+	/*	(design doc 12, Phase 2).				*/
+	/*--------------------------------------------------------------*/
+	if (command_line[0].demog_flag)
+		veg_host_transpiration(zone, patch, command_line);
+	/*--------------------------------------------------------------*/
 	/*	Calculate patch level transpiration			*/
 	/*--------------------------------------------------------------*/
 	patch[0].transpiration_sat_zone = 0.0;
@@ -2041,12 +2059,18 @@ void		patch_daily_F(
 	/*--------------------------------------------------------------*/
 	if (command_line[0].grow_flag > 0)  {
 		NB_CP(3);
+		/* FATES mode 3: plant N demand = FATES RD uptake capacity */
+		if (command_line[0].demog_flag)
+			veg_host_ndemand(patch, command_line);
                 resolve_sminn_competition(&(patch[0].soil_ns),patch[0].surface_NO3,
                         patch[0].surface_NH4,
                         patch[0].rootzone.depth,
                         patch[0].soil_defaults[0][0].active_zone_z,
                         patch[0].soil_defaults[0][0].N_decay_rate,
                         &(patch[0].ndf));
+		/* FATES mode 3: the granted plant uptake goes to FATES */
+		if (command_line[0].demog_flag)
+			veg_host_nuptake(patch, command_line);
 	}
 	/*--------------------------------------------------------------*/
 	/*	Reduce the stratum actual transpiration and compute 	*/
@@ -2133,7 +2157,8 @@ void		patch_daily_F(
         }
 			  if ( (strata[0].defaults[0][0].epc.veg_type != NON_VEG) ){
 
-			   	if (transpiration_reduction_percent < 1.0) {
+			   	/* FATES mode 3: legacy plant C is an inert shadow (FATES grows the plants) */
+			   	if ((transpiration_reduction_percent < 1.0) && (command_line[0].demog_flag != 3)) {
 
 
 
@@ -2156,6 +2181,7 @@ void		patch_daily_F(
 				}
 
 				vegtype=1;
+				if (command_line[0].demog_flag != 3)	/* FATES mode 3: FATES grows the plants */
 				canopy_stratum_growth(
 					world,
 					basin,
@@ -2330,6 +2356,69 @@ void		patch_daily_F(
 	patch[0].rz_drainage += rz_drainage;
 	patch[0].hourly_unsat_drainage += unsat_drainage;
 	patch[0].hourly_rz_drainage += rz_drainage;
+
+	/*--------------------------------------------------------------*/
+	/*	percolation from the bottom of the saturated zone to the	*/
+	/*	hillslope groundwater store (soil_percolation_rate > 0):	*/
+	/*	q = rate (h / soil_depth)^exp Ksat_vertical, h = saturated	*/
+	/*	thickness, at most half the saturated-zone water. It takes	*/
+	/*	the NO3 of the saturated zone (soil nitrate on its		*/
+	/*	exponential N_decay profile, share q / saturated water)	*/
+	/*	and soil DOM at the soil-water concentration (DOC capped	*/
+	/*	by gw_DOC_recharge_max, DON in proportion), as N_to_gw,	*/
+	/*	DON_to_gw and DOC_to_gw. Daily time step only.		*/
+	/*--------------------------------------------------------------*/
+	if ((command_line[0].gw_flag > 0) && (zone[0].hourly_rain_flag != 1)
+			&& (patch[0].soil_defaults[0][0].soil_percolation_rate > 0.0)
+			&& (patch[0].soil_defaults[0][0].soil_depth > ZERO)) {
+		struct soil_default *sd = patch[0].soil_defaults[0];
+		double zwt = compute_z_final(command_line[0].verbose_flag, sd->porosity_0, sd->porosity_decay,
+			sd->soil_depth, 0.0, -1.0 * patch[0].sat_deficit);
+		double h = sd->soil_depth - zwt;
+		double sat_water = sd->soil_water_cap - patch[0].sat_deficit;
+		if ((h > ZERO) && (sat_water > ZERO)) {
+			double q = sd->soil_percolation_rate * pow(min(1.0, h / sd->soil_depth), sd->soil_percolation_exp) * patch[0].Ksat_vertical;
+			q = min(q, 0.5 * sat_water);
+			if (q > ZERO) {
+				double f = q / sat_water;
+				double soil_water = sd->soil_water_cap - patch[0].sat_deficit + patch[0].rz_storage + patch[0].unsat_storage;
+				/* nitrate in the saturated zone (profile exp(-N_decay z) over the soil depth) */
+				if (patch[0].soil_ns.nitrate > ZERO) {
+					double d = sd->N_decay_rate, zb = sd->soil_depth, frac_sat;
+					if (d > ZERO) frac_sat = (exp(-d * zwt) - exp(-d * zb)) / (1.0 - exp(-d * zb));
+					else frac_sat = h / zb;
+					frac_sat = max(0.0, min(1.0, frac_sat));
+					double no3 = f * frac_sat * patch[0].soil_ns.nitrate;
+					hillslope[0].gw.NO3 += no3 * patch[0].area / hillslope[0].area;
+					patch[0].ndf.N_to_gw += no3;
+					patch[0].soil_ns.nitrate -= no3;
+				}
+				/* soil DOM at the soil-water concentration, DOC capped */
+				if (soil_water > ZERO) {
+					double fd = min(1.0, q / soil_water);
+					double doc = (patch[0].soil_cs.DOC > ZERO) ? fd * patch[0].soil_cs.DOC : 0.0;
+					double don = (patch[0].soil_ns.DON > ZERO) ? fd * patch[0].soil_ns.DON : 0.0;
+					if ((sd->gw_DOC_recharge_max > 0.0) && (doc > ZERO)) {
+						double doc_max = sd->gw_DOC_recharge_max * q / 1000.0;
+						if (doc > doc_max) { don *= doc_max / doc; doc = doc_max; }
+					}
+					if (doc > 0.0) {
+						hillslope[0].gw.DOC += doc * patch[0].area / hillslope[0].area;
+						patch[0].cdf.DOC_to_gw += doc;
+						patch[0].soil_cs.DOC -= doc;
+					}
+					if (don > 0.0) {
+						hillslope[0].gw.DON += don * patch[0].area / hillslope[0].area;
+						patch[0].ndf.DON_to_gw += don;
+						patch[0].soil_ns.DON -= don;
+					}
+				}
+				patch[0].sat_deficit += q;
+				hillslope[0].gw.storage += q * patch[0].area / hillslope[0].area;
+				patch[0].gw_drainage += q;
+			}
+		}
+	}
 	/* ---------------------------------------------- */
 	/*     Final rootzone saturation calculation      */
 	/* ---------------------------------------------- */
@@ -2664,6 +2753,10 @@ void		patch_daily_F(
 		- (patch[0].preday_sat_deficit - patch[0].sat_deficit)
 		- patch[0].delta_snowpack - patch[0].delta_rain_stored
 		- patch[0].delta_snow_stored - patch[0].detention_store;
+
+	/* FATES backend (-demog): legacy vs FATES comparison, diagnostics */
+	if (command_line[0].demog_flag)
+		veg_host_daily_end(zone, patch, command_line, current_date);
 
 	/*
 	if ((patch[0].water_balance > 0.00000001)||

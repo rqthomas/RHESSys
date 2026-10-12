@@ -88,6 +88,9 @@ int	 valid_option( char *command_line){
 		(strcmp(command_line,"-salience") == 0) ||
 		(strcmp(command_line,"-par") == 0) ||
 		(strcmp(command_line,"-vegspinup") == 0) ||
+		(strcmp(command_line,"-demog") == 0) ||
+		(strcmp(command_line,"-demog_inv") == 0) ||
+		(strcmp(command_line,"-demog_restart") == 0) ||
 		(strcmp(command_line,"-redefn") == 0) ||
 		(strcmp(command_line,"-template") == 0) ||
 		(strcmp(command_line,"-msr") == 0))

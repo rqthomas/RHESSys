@@ -35,6 +35,27 @@
 #include "rhessys.h"
 #include "phys_constants.h"
 
+/* carbon reserve (epc.reserve_max_frac > 0): of the N-limited surplus photosynthate
+   excess_c, keep what fits below the cap (reserve_max_frac x plant biomass C: leaf, fine
+   root and wood, stores and transfer pools included) in cpool; returns the part that is
+   not fixed (removed from psn_to_cpool, as the original model removes all of it). The
+   reserve pays maintenance respiration when photosynthesis falls short (cpool is debited
+   daily), so a stand only goes into carbon deficit once it is empty. */
+static double reserve_not_kept(struct cstate_struct *cs, struct epconst_struct epc, double excess_c)
+{
+	double biomass, room, keep;
+	if ((epc.reserve_max_frac <= 0.0) || (excess_c <= 0.0)) return(excess_c);
+	biomass = cs->leafc + cs->leafc_store + cs->leafc_transfer
+		+ cs->frootc + cs->frootc_store + cs->frootc_transfer
+		+ cs->live_stemc + cs->dead_stemc + cs->live_crootc + cs->dead_crootc
+		+ cs->livestemc_store + cs->deadstemc_store + cs->livecrootc_store + cs->deadcrootc_store
+		+ cs->livestemc_transfer + cs->deadstemc_transfer + cs->livecrootc_transfer + cs->deadcrootc_transfer;
+	room = epc.reserve_max_frac * biomass - cs->cpool;
+	if (room <= 0.0) return(excess_c);
+	keep = (excess_c < room) ? excess_c : room;
+	return(excess_c - keep);
+}
+
 int allocate_daily_growth(int nlimit,
 						  double pnow,
 						  double Tsoil,
@@ -211,7 +232,7 @@ int allocate_daily_growth(int nlimit,
 				ndf_patch->nfix_to_sminn = plant_nalloc - ndf->retransn_to_npool-sminn_to_npool;
 				excess_c = excess_c - amt_fix;
 				if (excess_c > ZERO) {
-					cdf->psn_to_cpool -= excess_c;
+					cdf->psn_to_cpool -= reserve_not_kept(cs, epc, excess_c);
 					ns->nlimit = 1;
 				}
 				else ns->nlimit=0;
@@ -226,7 +247,7 @@ int allocate_daily_growth(int nlimit,
 					plant_calloc = plant_nalloc  * mean_cn;
 					plant_calloc = plant_calloc/(1+epc.gr_perc);
 					excess_c = max(cs->availc - (plant_calloc*(1+epc.gr_perc)),0.0);
-					cdf->psn_to_cpool -= excess_c;
+					cdf->psn_to_cpool -= reserve_not_kept(cs, epc, excess_c);
 					ns->nlimit = 1;
 				}
 		}

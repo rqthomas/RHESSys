@@ -28,6 +28,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "rhessys.h"
+#include "rhessys_veg.h"
 
 void	execute_state_output_event(
 								   struct	world_object	*world,
@@ -94,5 +95,8 @@ void	execute_state_output_event(
 		output_stream_routing_state(world, outfile);
 	fclose(outfile);
     printf("output basin state file closed\n");
+	/* FATES backend (-demog): its restart next to the state file */
+	if (command_line[0].demog_flag)
+		veg_host_write_restart(filename);
 	return;
 } /*end execute_state_output_event*/

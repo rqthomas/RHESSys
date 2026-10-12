@@ -1907,7 +1907,10 @@ void	canopy_stratum_daily_F(
 	/*--------------------------------------------------------------*/
 	/*	perform growth related computations (if grow flag is on */
 	/*--------------------------------------------------------------*/
-	if ((command_line[0].grow_flag > 0) && (stratum[0].defaults[0][0].epc.veg_type != NON_VEG)) {
+	/* FATES mode 3: FATES sets the plant N demand; the legacy strata are an
+	   inert shadow (their N demand calculation also edits cs.availc/mr_deficit) */
+	if ((command_line[0].grow_flag > 0) && (stratum[0].defaults[0][0].epc.veg_type != NON_VEG)
+	    && (command_line[0].demog_flag != 3)) {
 		/*--------------------------------------------------------------*/
 		/*	compute N uptake from the soil 				*/
 		/*--------------------------------------------------------------*/

@@ -124,6 +124,7 @@
 #include <math.h>
 
 #include "rhessys.h"
+#include "rhessys_veg.h"
 #include "phys_constants.h"
 #include "functions.h"
 
@@ -182,6 +183,12 @@ void		zone_daily_F(
 	/*--------------------------------------------------------------*/
 	/* Set daily Kdowns to calculated if not given as inputs.		*/
 	/* Transmissivity & cloud fractions carry over from zone_daily_I.	*/
+	/* FATES backend (-demog): world_daily_F runs this in two passes so every
+	   site's FATES step can run in one parallel batch -- pass 1 = the zone's
+	   daily weather (all zones), pass 2 = its patches. 0 = both (legacy). */
+	if (veg_zone_phase == 2)
+		goto veg_zone_patches;
+
 	if ((zone[0].Kdown_direct_flag == 0) ||
 		(zone[0].Kdown_diffuse_flag == 0)) {
 			zone[0].Kdown_direct_flat = zone[0].Kdown_direct_flat_calc;
@@ -202,6 +209,30 @@ void		zone_daily_F(
 	/* Otherwise use input Kdowns and calculate transmissivity as	*/
 	/* ratio between given and calculated, then generate cloud		*/
 	/* fraction estimates for longwave calculations. */ 
+	else if (zone[0].defaults[0][0].radiation_slope_aspect > 0.0) {
+			/* supplied Kdowns are flat-surface values (e.g. reanalysis): keep their daily
+			   totals (cloudiness) but put them on this zone's slope and aspect with the
+			   ratio of today's computed sloped to flat clear-sky radiation (hourly sun
+			   geometry, slope, aspect, horizons; diffuse: sky view factor) */
+			zone[0].Kdown_direct_flat = zone[0].Kdown_direct;
+			zone[0].Kdown_diffuse_flat = zone[0].Kdown_diffuse;
+			if ((zone[0].Kdown_direct_flat_calc + zone[0].Kdown_diffuse_flat_calc) > ZERO)
+				zone[0].atm_trans = (zone[0].Kdown_direct_flat + zone[0].Kdown_diffuse_flat)
+						/ (zone[0].Kdown_direct_flat_calc + zone[0].Kdown_diffuse_flat_calc);
+			else zone[0].atm_trans = 0.0;
+			if (zone[0].Kdown_direct_flat_calc > ZERO)
+				zone[0].Kdown_direct = zone[0].Kdown_direct_flat
+					* zone[0].Kdown_direct_calc / zone[0].Kdown_direct_flat_calc;
+			if (zone[0].Kdown_diffuse_flat_calc > ZERO)
+				zone[0].Kdown_diffuse = zone[0].Kdown_diffuse_flat
+					* zone[0].Kdown_diffuse_calc / zone[0].Kdown_diffuse_flat_calc;
+			zone[0].cloud_fraction = 1.0 - zone[0].atm_trans
+						/(zone[0].defaults[0][0].sea_level_clear_sky_trans
+						+ zone[0].z * zone[0].defaults[0][0].atm_trans_lapse_rate);
+			zone[0].cloud_fraction = max(zone[0].cloud_fraction,0.0);
+			zone[0].cloud_fraction = min(zone[0].cloud_fraction,1.0);
+			zone[0].cloud = zone[0].cloud_opacity * zone[0].cloud_fraction * 12.0;
+		}
 	else {
 			zone[0].atm_trans = (zone[0].Kdown_direct+zone[0].Kdown_diffuse) 
 						/ (zone[0].Kdown_direct_calc + zone[0].Kdown_diffuse_calc);
@@ -699,6 +730,9 @@ void		zone_daily_F(
 	/*--------------------------------------------------------------*/
 	/*	Cycle through the patches for day end computations		    	*/
 	/*--------------------------------------------------------------*/
+	if (veg_zone_phase == 1)
+		return;
+veg_zone_patches:
 	for ( patch=0 ; patch<zone[0].num_patches; patch++ ){
 		patch_daily_F(
 			world,

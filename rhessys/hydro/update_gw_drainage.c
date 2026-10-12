@@ -120,35 +120,80 @@ int update_gw_drainage(
 	}
 
 	/*------------------------------------------------------*/
-	/*	determine associated N leached			*/
+	/*	recharge through the soil (gw_recharge_through_soil):	*/
+	/*	the surface solutes in the draining water join the	*/
+	/*	soil pools (as infiltration does), so deposition passes	*/
+	/*	plant uptake, immobilization and adsorption; recharge	*/
+	/*	then carries gw_NO3_recharge_frac of the soil-water NO3	*/
+	/*	concentration (soil NH4 is adsorbed and stays). Soil DOM	*/
+	/*	goes to groundwater through the DOM block above.		*/
 	/*------------------------------------------------------*/
-	if (patch[0].surface_DON > ZERO) {
-		N_loss = sat_to_gw_coeff * patch[0].surface_DON;
-		hillslope[0].gw.DON += (N_loss * patch[0].area / hillslope[0].area);
-		patch[0].ndf.DON_to_gw += N_loss;
-		patch[0].surface_DON -= N_loss;
+	if (patch[0].soil_defaults[0][0].gw_recharge_through_soil > 0.0) {
+		if (patch[0].surface_DON > ZERO) {
+			N_loss = sat_to_gw_coeff * patch[0].surface_DON;
+			patch[0].soil_ns.DON += N_loss;
+			patch[0].surface_DON -= N_loss;
 		}
-	if (patch[0].surface_DOC > ZERO) {
-		N_loss = sat_to_gw_coeff * patch[0].surface_DOC;
-		hillslope[0].gw.DOC += (N_loss * patch[0].area / hillslope[0].area);
-		patch[0].cdf.DOC_to_gw += N_loss;
-		patch[0].surface_DOC -= N_loss;
+		if (patch[0].surface_DOC > ZERO) {
+			N_loss = sat_to_gw_coeff * patch[0].surface_DOC;
+			patch[0].soil_cs.DOC += N_loss;
+			patch[0].surface_DOC -= N_loss;
 		}
+		if (patch[0].surface_NH4 > ZERO) {
+			N_loss = sat_to_gw_coeff * patch[0].surface_NH4;
+			patch[0].soil_ns.sminn += N_loss;
+			patch[0].surface_NH4 -= N_loss;
+		}
+		if (patch[0].surface_NO3 > ZERO) {
+			N_loss = sat_to_gw_coeff * patch[0].surface_NO3;
+			patch[0].soil_ns.nitrate += N_loss;
+			patch[0].surface_NO3 -= N_loss;
+		}
+		if ((drainage > ZERO) && (patch[0].soil_ns.nitrate > ZERO)
+				&& (patch[0].soil_defaults[0][0].gw_NO3_recharge_frac > 0.0)) {
+			double soil_water = patch[0].soil_defaults[0][0].soil_water_cap - patch[0].sat_deficit
+				+ patch[0].rz_storage + patch[0].unsat_storage;
+			if (soil_water > ZERO) {
+				double f = min(1.0, patch[0].soil_defaults[0][0].gw_NO3_recharge_frac * drainage / soil_water);
+				N_loss = f * patch[0].soil_ns.nitrate;
+				hillslope[0].gw.NO3 += (N_loss * patch[0].area / hillslope[0].area);
+				patch[0].ndf.N_to_gw += N_loss;
+				patch[0].soil_ns.nitrate -= N_loss;
+			}
+		}
+	}
+	else {
+		/*------------------------------------------------------*/
+		/*	determine associated N leached			*/
+		/*------------------------------------------------------*/
+		if (patch[0].surface_DON > ZERO) {
+			N_loss = sat_to_gw_coeff * patch[0].surface_DON;
+			hillslope[0].gw.DON += (N_loss * patch[0].area / hillslope[0].area);
+			patch[0].ndf.DON_to_gw += N_loss;
+			patch[0].surface_DON -= N_loss;
+			}
+		if (patch[0].surface_DOC > ZERO) {
+			N_loss = sat_to_gw_coeff * patch[0].surface_DOC;
+			hillslope[0].gw.DOC += (N_loss * patch[0].area / hillslope[0].area);
+			patch[0].cdf.DOC_to_gw += N_loss;
+			patch[0].surface_DOC -= N_loss;
+			}
 	
 	
-	if (patch[0].surface_NH4 > ZERO) {
-		N_loss = sat_to_gw_coeff * patch[0].surface_NH4;
-		hillslope[0].gw.NH4 += (N_loss * patch[0].area / hillslope[0].area);
-		patch[0].ndf.N_to_gw += N_loss;
-		patch[0].surface_NH4 -= N_loss;
-		}
+		if (patch[0].surface_NH4 > ZERO) {
+			N_loss = sat_to_gw_coeff * patch[0].surface_NH4;
+			hillslope[0].gw.NH4 += (N_loss * patch[0].area / hillslope[0].area);
+			patch[0].ndf.N_to_gw += N_loss;
+			patch[0].surface_NH4 -= N_loss;
+			}
 	
-	if (patch[0].surface_NO3 > ZERO) {
-		N_loss = sat_to_gw_coeff * patch[0].surface_NO3;
-		hillslope[0].gw.NO3 += (N_loss * patch[0].area / hillslope[0].area);
-		patch[0].ndf.N_to_gw += N_loss;
-		patch[0].surface_NO3 -= N_loss;
-		}
+		if (patch[0].surface_NO3 > ZERO) {
+			N_loss = sat_to_gw_coeff * patch[0].surface_NO3;
+			hillslope[0].gw.NO3 += (N_loss * patch[0].area / hillslope[0].area);
+			patch[0].ndf.N_to_gw += N_loss;
+			patch[0].surface_NO3 -= N_loss;
+			}
+	}
 
 	return (!ok);
 } /* end update_gw_drainage.c */

@@ -1051,6 +1051,7 @@ struct  zone_default
         double  lapse_rate;             /* Celcius degrees/m    */
         double  wet_lapse_rate;         /* Celcius degrees/m    */
         double  lapse_rate_precip_default;              /* k by m       */
+        double  radiation_slope_aspect;  /* 1 = scale supplied (flat-surface) Kdown_direct/diffuse by the zone's computed sloped/flat ratio (slope, aspect, horizons, sky view); 0 = use them unchanged on every zone (original) */
         double  lapse_rate_tmin;                /* Celcius degrees/m    */
         double  lapse_rate_tmax;                /* Celcius degrees/m    */
         double  lapse_rate_tavg;                /* Celcius degrees/m    */
@@ -1330,6 +1331,10 @@ struct	soil_default
 	double	sediment_transport_slope_exp;	/* gamma: overland-flow transport capacity Tc = c * Qout^1.5 * sin(slope)^gamma on every patch (0 = off: legacy, cap on stream patches only, no slope) */
 	double	sediment_OC_mixing_mass;		/* kg soil/m2: eroded sediment takes the fraction rainsplash/mass of each soil pool (0 = use sediment_OC_frac) */
 	double	sediment_OC_frac;				/* kgC/kg sediment: soil organic C detached with eroded sediment (0 = off) */
+	double	soil_percolation_rate;			/* m/day: leakage from the bottom of the saturated zone to the hillslope groundwater store (weathered rock), = rate x (saturated thickness / soil depth)^soil_percolation_exp x Ksat_vertical; carries the saturated-zone NO3 and soil DOM (DOC capped by gw_DOC_recharge_max). 0 = off (original: no exit at the soil bottom) */
+	double	soil_percolation_exp;			/* (DIM) shape of that dependence on saturated thickness (1 = linear) */
+	double	gw_recharge_through_soil;			/* 1 = groundwater recharge passes through the soil: the surface solutes in the draining water go to the soil pools, and recharge carries gw_NO3_recharge_frac of the soil-water NO3 concentration (0 = surface solutes straight to groundwater, the original behaviour) */
+	double	gw_NO3_recharge_frac;				/* (DIM) 0-1: with gw_recharge_through_soil, recharge carries this fraction of the soil-water NO3 concentration */
 	double	gw_DOC_recharge_max;				/* mg C/L: cap on the DOC concentration of that recharge (sorption in deeper horizons); <= 0 = no cap. DON moves at the soil DON:DOC ratio; the excess stays in the soil DOM pools */
 	double	gl_c;						/* m/s */
 	double	gsurf_slope;					/* (DIM) */
@@ -2427,6 +2432,10 @@ struct  command_line_object
         int             gridded_netcdf_flag;
         int             grow_flag;
         int             vegspinup_flag;
+        int             demog_flag;                       /* 0 = legacy big-leaf (default); FATES backend (-demog): 1 = read-only, 2 = FATES transpiration + structure drive RHESSys water, 3 = also FATES N uptake + litter, legacy plant C/N off */
+        char            fates_paramfile[FILEPATH_LEN];    /* FATES JSON parameter file (when demog_flag > 0) */
+        char            fates_invfile[FILEPATH_LEN];      /* FATES inventory control file (-demog_inv); empty = cold start */
+        int             demog_restart;                    /* 1 = start FATES from <world file>.fates (+ .fates_host) (-demog_restart) */
         int             routing_flag;
         int             surface_routing_flag;
         int             stream_routing_flag;
@@ -2756,6 +2765,7 @@ struct epvar_struct
     double psi;            /* (MPa) water potential of soil and leaves */
     double psi_ravg;            /* (MPa) water potential of soil and leaves */
     int   wstress_days;    /* # of days in which water stress occurs */
+    double hydr_stress;    /* (days) hydraulic stress index: +1 per leaf-on day with unfrozen soil and predawn psi at or below hydr_mort_psi, -hydr_mort_recovery per other such day; carried across years (state) */
     double crit_vwc;       /* (m/m) water content at stomatal closure */
     double  min_vwc;       /* (m/m) this growing season minimum water content */
     double max_fparabs;    /* (DIM) maximum fraction of PAR absorbed */
@@ -3059,6 +3069,13 @@ struct epconst_struct
         double gs_ravg_days;       /* (days)  length of averaging window for gs controls  */
 	double gsi_thresh;	/* (0 to 1) gsi threshold for initiating phenological change */
 	double cpool_mort_fract;  /* (0 to 1) net carbohydrate store proportion of total biomass below which mortality occurs */
+	double hydr_mort_days0;   /* (days) hydraulic stress mortality: stress index above which trees start dying (0 = off) */
+	double hydr_mort_days_span;  /* (days) further stress index to full mortality intensity */
+	double hydr_mort_psi;     /* (MPa) predawn water potential counted as hydraulic stress (default psi_close; predawn psi is floored at psi_close, so a higher value, e.g. -1.5, is needed to see drought) */
+	double hydr_mort_recovery;  /* (days) stress index removed per unstressed leaf-on day */
+	double hydr_mort_rate;    /* (1/yr) mortality rate at full intensity, applied daily as rate/365 */
+	double starv_mort_scale;  /* (DIM) graded carbon-starvation mortality: share killed = min(1, shortfall / (starv_mort_scale x live biomass C)), shortfall = cpool_mort_fract x biomass - cpool (0 = original: 1 - cpool/(cpool_mort_fract x biomass), 100 % when cpool < 0, once a year); > 0: applied daily as that annual share / 365 */
+	double reserve_max_frac;  /* (DIM) carbon reserve: N-limited surplus photosynthate is kept in cpool up to this fraction of plant biomass C incl. wood (0 = off: surplus not fixed, original behaviour) */
         int gs_npp_on;          /* (1 or 2) determines whether dynamic drought senescence is turned on */
         double gs_npp_slp;          /* slope of nppcum/litfall start curve */
         double gs_npp_intercpt;	   /* intercept of nppcum/litfall start curve */

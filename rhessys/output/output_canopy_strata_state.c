@@ -159,6 +159,11 @@ void	output_canopy_strata_state(
 	fprintf(outfile , "%-30.17g %s"       , (canopy_strata[0].cs.age)            , "cs.age");
 	fprintf(outfile , "\n            ");
 	fprintf(outfile , "%-30d %s"        , (canopy_strata[0].epv.wstress_days)       , "epv.wstress_days");
+	/* hydraulic stress index: only written when non-zero (absent = 0), so states without it are unchanged */
+	if (canopy_strata[0].epv.hydr_stress != 0.0) {
+		fprintf(outfile , "\n            ");
+		fprintf(outfile , "%-30.17g %s"       , (canopy_strata[0].epv.hydr_stress)       , "epv.hydr_stress");
+	}
 	fprintf(outfile , "\n            ");
 	fprintf(outfile , "%-30.17g %s"       , (canopy_strata[0].epv.max_fparabs)        , "epv.max_fparabs");
 	fprintf(outfile , "\n            ");

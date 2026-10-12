@@ -103,7 +103,11 @@ struct	command_line_object	*construct_command_line(
 	command_line[0].surface_energy_flag = 0;
 	command_line[0].firespread_flag = 0;
 	command_line[0].salience_flag = 0;
-	command_line[0].vegspinup_flag = 0;		
+	command_line[0].vegspinup_flag = 0;
+	command_line[0].demog_flag = 0;
+	command_line[0].fates_paramfile[0] = '\0';
+	command_line[0].fates_invfile[0] = '\0';
+	command_line[0].demog_restart = 0;
 	command_line[0].vgsen_flag = 0;
 	command_line[0].FillSpill_flag=0;	
 	command_line[0].evap_use_longwave_flag = 0;
@@ -344,6 +348,52 @@ printf("%s ",command_line[0].WUI_filename);
 				strncpy(command_line[0].vegspinup_filename, main_argv[i], FILEPATH_LEN);
 				i++;
       }
+
+			/*-------------------------------------------------*/
+			/* FATES vegetation backend: -demog <fates_paramfile> [mode] */
+			/*   mode 1 (default) = read-only, 2 = FATES		*/
+			/*   transpiration + canopy structure drive RHESSys	*/
+			/*   water, 3 = also FATES N uptake + litter (CNP),	*/
+			/*   legacy plant C/N off					*/
+			/*-------------------------------------------------*/
+			else if ( strcmp(main_argv[i],"-demog") == 0 ){
+				command_line[0].demog_flag = 1;
+				i++;
+				if ((i == main_argc) || (valid_option(main_argv[i])==1)){
+					fprintf(stderr,"FATAL ERROR: FATES parameter file not specified after -demog\n");
+					exit(EXIT_FAILURE);
+				} /*end if*/
+				strncpy(command_line[0].fates_paramfile, main_argv[i], FILEPATH_LEN);
+				i++;
+				if ((i < main_argc) && (valid_option(main_argv[i]) == 0)) {
+					command_line[0].demog_flag = (int)atoi(main_argv[i]);
+					if ((command_line[0].demog_flag < 1) || (command_line[0].demog_flag > 3)) {
+						fprintf(stderr,"FATAL ERROR: -demog mode must be 1 (read-only), 2 (water/structure) or 3 (+ N, litter)\n");
+						exit(EXIT_FAILURE);
+					}
+					i++;
+				}
+			}
+			/*-------------------------------------------------*/
+			/* FATES restart: -demog_restart (reads <world file>.fates and	*/
+			/* <world file>.fates_host, written with the .state file)	*/
+			/*-------------------------------------------------*/
+			else if ( strcmp(main_argv[i],"-demog_restart") == 0 ){
+				command_line[0].demog_restart = 1;
+				i++;
+			}
+			/*-------------------------------------------------*/
+			/* FATES initial stand from an inventory: -demog_inv <ctrl file> */
+			/*-------------------------------------------------*/
+			else if ( strcmp(main_argv[i],"-demog_inv") == 0 ){
+				i++;
+				if ((i == main_argc) || (valid_option(main_argv[i])==1)){
+					fprintf(stderr,"FATAL ERROR: inventory control file not specified after -demog_inv\n");
+					exit(EXIT_FAILURE);
+				} /*end if*/
+				strncpy(command_line[0].fates_invfile, main_argv[i], FILEPATH_LEN);
+				i++;
+			}
 
 			/*-------------------------------------------------*/
 			/*	turn gw off option */
@@ -1377,5 +1427,21 @@ printf("%s ",command_line[0].WUI_filename);
 		fprintf(stderr, "FATAL ERROR: -strbgc needs stream routing (-str) and growth mode (-g)\n");
 		exit(EXIT_FAILURE);
 	}
+
+	/* FATES demography requires the carbon/growth engine (design doc 6.1) */
+	if ((command_line[0].demog_flag > 0) && (command_line[0].grow_flag <= 0)) {
+		fprintf(stderr, "FATAL ERROR: -demog requires the growth engine (-g)\n");
+		exit(EXIT_FAILURE);
+	}
+
+	if ((command_line[0].demog_restart == 1) && (command_line[0].demog_flag == 0)) {
+		fprintf(stderr, "FATAL ERROR: -demog_restart needs -demog\n");
+		exit(EXIT_FAILURE);
+	}
+	if ((command_line[0].fates_invfile[0] != '\0') && (command_line[0].demog_flag == 0)) {
+		fprintf(stderr, "FATAL ERROR: -demog_inv needs -demog\n");
+		exit(EXIT_FAILURE);
+	}
+
 	return(command_line);
 } /*end construct_command_line*/

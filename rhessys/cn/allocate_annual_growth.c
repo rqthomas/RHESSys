@@ -221,7 +221,11 @@ int allocate_annual_growth(				int id,
 	/* cs->mortality_fract = 0.0;*/
 
 
-	if (((total_store < epc.cpool_mort_fract*total_biomass) || (cs->cpool < ZERO))  && (cs->age > epc.mort_start_age) && (vmort_flag == 1)) {
+	/* graded starvation mortality (epc.starv_mort_scale > 0) is applied daily in
+	   canopy_stratum_daily_I.c (dead plants enter litter/CWD gradually), not here */
+	if (epc.starv_mort_scale > 0.0) {
+	}
+	else if (((total_store < epc.cpool_mort_fract*total_biomass) || (cs->cpool < ZERO))  && (cs->age > epc.mort_start_age) && (vmort_flag == 1)) {
 		if (epc.cpool_mort_fract*total_biomass > ZERO)
 			excess_carbon = 1.0 - total_store/(epc.cpool_mort_fract*total_biomass);
 		else

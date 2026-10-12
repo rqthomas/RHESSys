@@ -38,6 +38,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "rhessys.h"
+#include "rhessys_veg.h"
 #define ONE 1.0
 #include "params.h"
 
@@ -207,6 +208,12 @@ void input_new_strata_thin(
 	/*--------------------------------------------------------------*/
 	/* Add removed C and N to CWD and litter pools */
 	/*--------------------------------------------------------------*/
+		/* FATES mode 3: FATES owns the plants -- the event is handed to FATES
+		   (fire / harvest disturbance, design doc 12 Phase 6) */
+		if ((command_line[0].demog_flag == 3)
+		    && (canopy_strata[0].defaults[0][0].epc.veg_type != NON_VEG)
+		    && veg_host_strata_event(patch, canopy_strata, thintyp, &mort))
+			goto thin_base_stations;
 		update_mortality(canopy_strata[0].defaults[0][0].epc,
 						 &(canopy_strata[0].cs),
 						 &(canopy_strata[0].cdf),
@@ -424,6 +431,7 @@ void input_new_strata_thin(
 			canopy_strata[0].cs.age = 0;
 			canopy_strata[0].cs.num_resprout = 0;
 		}
+thin_base_stations:
 		/*--------------------------------------------------------------*/
 		/*	Read in the number of  strata base stations 					*/
 		/*--------------------------------------------------------------*/

@@ -123,6 +123,7 @@ struct zone_default *construct_zone_defaults(
 		default_object_list[i].lapse_rate_tavg = getDoubleParam(&paramCnt, &paramPtr, "lapse_rate_tavg", "%lf", default_object_list[i].lapse_rate, 1);
 		default_object_list[i].wet_lapse_rate = 	getDoubleParam(&paramCnt, &paramPtr, "wet_lapse_rate", "%lf", 0.0049, 1);
 		default_object_list[i].lapse_rate_precip_default = getDoubleParam(&paramCnt, &paramPtr, "lapse_rate_precip_default", "%lf", -999.0, 1);
+		default_object_list[i].radiation_slope_aspect = getDoubleParam(&paramCnt, &paramPtr, "radiation_slope_aspect", "%lf", 0.0, 1);
 		default_object_list[i].psen[PTHRESH] = 		getDoubleParam(&paramCnt, &paramPtr, "psen.pthresh", "%lf", 0.0, 1);
 		default_object_list[i].psen[PTYPELOW] = 	getDoubleParam(&paramCnt, &paramPtr, "psen.ptypelow", "%lf", 1.0, 1);
 		default_object_list[i].psen[P1LOW] = 		getDoubleParam(&paramCnt, &paramPtr, "psen.p1low", "%lf", 0.0, 1);
@@ -147,7 +148,7 @@ struct zone_default *construct_zone_defaults(
 		/*--------------------------------------------------------------*/
 		/*	CO2 is initialized/default to 322 ppm			*/
 		/*--------------------------------------------------------------*/
-		default_object_list[i].atm_CO2 = 		getDoubleParam(&paramCnt, &paramPtr, "atm_CO2 ", "%lf", 322.0, 1);
+		default_object_list[i].atm_CO2 = 		getDoubleParam(&paramCnt, &paramPtr, "atm_CO2", "%lf", 322.0, 1);   /* key had a trailing space ("atm_CO2 "), so the def value was never read and 322 was always used (fixed 2026-10-10) */
 		/*--------------------------------------------------------------*/
 		/*      if grow flag allocate a grow default structure for the  */
 		/*      ith object.                                             */

@@ -292,6 +292,7 @@
 #include <time.h>
 
 #include "rhessys.h"
+#include "rhessys_veg.h"
 #include "output_filter/construct_output_filter.h"
 #include "output_filter/destroy_output_filter.h"
 
@@ -398,6 +399,19 @@ int	main( int main_argc, char **main_argv)
 	world = construct_world( command_line );
 	if (command_line[0].verbose_flag > 0  )
 		fprintf(stderr,"FINISHED CON WORLD ***\n");
+
+	/*--------------------------------------------------------------*/
+	/*	Select + initialize the vegetation backend.					*/
+	/*	Legacy big-leaf (default) runs inline; FATES (-demog) is an	*/
+	/*	opt-in Fortran backend (design doc 9.2, Phase 0).			*/
+	/*--------------------------------------------------------------*/
+	prime_veg( command_line[0].demog_flag ? "fates" : "legacy" );
+	if ( command_line[0].demog_flag ) {
+		/* one FATES site per patch + soil-adaptor layers (Phase 1) */
+		veg_host_init(world, command_line);
+		if (command_line[0].verbose_flag > 0 )
+			fprintf(stderr,"FINISHED FATES VEG INIT ***\n");
+	}
 	/*--------------------------------------------------------------*/
 	/*	Construct the output file objects.							*/
 	/*--------------------------------------------------------------*/
@@ -487,6 +501,11 @@ int	main( int main_argc, char **main_argv)
 	if (command_line[0].verbose_flag > 0 )
 		fprintf(stderr,"FINISHED DES OUTPUT FILES\n");
 	
+	/*--------------------------------------------------------------*/
+	/*	Shut down the vegetation backend (FATES only).				*/
+	/*--------------------------------------------------------------*/
+	if ( command_line[0].demog_flag )
+		veg_host_finish(command_line);
 	/*--------------------------------------------------------------*/
 	/*	Destroy the world.											*/
 	/*--------------------------------------------------------------*/
