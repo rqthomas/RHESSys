@@ -67,6 +67,11 @@ static double		*site_tleg = NULL;	/* today's legacy transpiration demand (m/day)
 /* FATES N stock yesterday (kg/m2), legacy strata C+N fingerprint at start  */
 static double		*site_nh4 = NULL, *site_no3 = NULL, *site_nprev = NULL, *site_legacy0 = NULL;
 static double		tot_effc = 0.0, tot_effn = 0.0;
+/* -demog_wood_resp: today's wood-decay respiration per site (kgC/m2: surface cel, lig;
+   below-ground cel, lig), booked as litter heterotrophic respiration at end of day */
+static double		(*site_wresp)[4] = NULL;
+static double		cwd_frac[2] = {0.0, 0.0}, tot_wresp = 0.0, tot_wood = 0.0;
+static double		command_line_wood_resp = 0.0;
 /* Phase 6: TEC disturbance events pending for the next FATES step, per site
    and leaf habit ([0] evergreen, [1] deciduous): removal (thin_harvest) and
    mortality (thin_remain / _fire_remain / _snags) fractions of above-ground C */
@@ -253,6 +258,23 @@ static void fates_litter_and_budget(struct patch_object *patch, int site, double
 	patch[0].litter_ns.litr2n_bg += o[0].lb_n_cel / 1000.0;
 	patch[0].litter_ns.litr4n_bg += o[0].lb_n_lig / 1000.0;
 	split_err_max = max(split_err_max, o[0].lit_split_err);
+	if (command_line_wood_resp > 0.0) {
+		/* wood decay (-demog_wood_resp): fungi respire this fraction of the C of today's
+		   CWD fragments (above + below ground) instead of it entering RHESSys's cellulose /
+		   lignin litter; all the wood N still enters, so the litter that does is N-richer */
+		double src[10], *w = site_wresp[site - 1], f = command_line_wood_resp;
+		veg_litter_src(&site, src);		/* gC/m2/day; [2] AG CWD, [4] BG CWD */
+		w[0] = f * src[2] * cwd_frac[0] / 1000.0;
+		w[1] = f * src[2] * cwd_frac[1] / 1000.0;
+		w[2] = f * src[4] * cwd_frac[0] / 1000.0;
+		w[3] = f * src[4] * cwd_frac[1] / 1000.0;
+		patch[0].litter_cs.litr2c -= w[0];
+		patch[0].litter_cs.litr4c -= w[1];
+		patch[0].litter_cs.litr2c_bg -= w[2];
+		patch[0].litter_cs.litr4c_bg -= w[3];
+		tot_wresp += patch[0].area * (w[0] + w[1] + w[2] + w[3]);
+		tot_wood += patch[0].area * (src[2] + src[4]) / 1000.0;
+	}
 	/* root efflux -> below-ground labile litter, where FATES meant to put it */
 	patch[0].litter_cs.litr1c_bg += o[0].efflux_c / 1000.0;
 	patch[0].litter_ns.litr1n_bg += o[0].efflux_n / 1000.0;
@@ -1071,11 +1093,15 @@ void veg_host_init(struct world_object *world, struct command_line_object *comma
 		&inv_len, path, &log_len, &nlevsoil, &nlevdecomp, &command_line[0].demog_flag,
 		&nsites, &command_line[0].demog_restart);
 	{
-		int mode = command_line[0].demog_nneed + 2 * command_line[0].demog_canopy_frac;
+		int mode = command_line[0].demog_nneed;
 		veg_set_ndemand(&mode);
 	}
-	if (command_line[0].demog_canopy_frac)
-		fprintf(stderr, "FATES host: canopy LAI / conductance / absorbed radiation weighted by FATES canopy fraction (-demog_canopy_frac)\n");
+	command_line_wood_resp = (command_line[0].demog_flag == 3) ? command_line[0].demog_wood_resp : 0.0;
+	if (command_line_wood_resp > 0.0) {
+		veg_cwd_frac(cwd_frac);
+		fprintf(stderr, "FATES host: wood decay respires %.3f of FATES CWD fragmentation C before RHESSys litter "
+			"(-demog_wood_resp; CWD cellulose/lignin %.2f/%.2f)\n", command_line_wood_resp, cwd_frac[0], cwd_frac[1]);
+	}
 	if (command_line[0].demog_nneed)
 		fprintf(stderr, "FATES host: plant N demand = max(RD root capacity, potential growth N need) (-demog_nneed)\n");
 	for (s = 0; s < nsites; s++) {
@@ -1091,12 +1117,13 @@ void veg_host_init(struct world_object *world, struct command_line_object *comma
 	site_no3 = (double *) calloc(nsites, sizeof(double));
 	site_nprev = (double *) calloc(nsites, sizeof(double));
 	site_legacy0 = (double *) calloc(nsites, sizeof(double));
+	site_wresp = calloc(nsites, sizeof(*site_wresp));
 	for (s = 0; s < nsites; s++) {
 		site_nprev[s] = -1.0;
 		site_legacy0[s] = -1.0;
 	}
 	if ((site_out == NULL) || (site_tf == NULL) || (site_tleg == NULL) || (site_nh4 == NULL)
-	    || (site_no3 == NULL) || (site_nprev == NULL) || (site_legacy0 == NULL)) {
+	    || (site_no3 == NULL) || (site_nprev == NULL) || (site_legacy0 == NULL) || (site_wresp == NULL)) {
 		fprintf(stderr, "FATAL ERROR: veg_host_init: out of memory\n");
 		exit(EXIT_FAILURE);
 	}
@@ -1616,6 +1643,17 @@ void veg_host_daily_end(struct zone_object *zone, struct patch_object *patch,
 		return;
 	o = &site_out[site - 1];
 
+	if (command_line_wood_resp > 0.0) {
+		/* wood-decay respiration -> today's litter heterotrophic respiration (after
+		   update_decomp has set the decomposition fluxes, before output) */
+		double *w = site_wresp[site - 1];
+		patch[0].cdf.litr2c_hr += w[0];
+		patch[0].cdf.litr4c_hr += w[1];
+		patch[0].cdf.litr2c_hr_bg += w[2];
+		patch[0].cdf.litr4c_hr_bg += w[3];
+		w[0] = w[1] = w[2] = w[3] = 0.0;
+	}
+
 	gpp_l = lai_l = 0.0;
 	for (i = 0; i < patch[0].num_canopy_strata; i++) {
 		st = patch[0].canopy_strata[i];
@@ -1699,6 +1737,11 @@ void veg_host_finish(struct command_line_object *command_line)
 			tot_area_days ? tot_up / tot_area_days : 0.0, tot_area_days ? tot_recv / tot_area_days : 0.0,
 			tot_area_days ? tot_litc / tot_area_days : 0.0, tot_area_days ? tot_litn / tot_area_days : 0.0,
 			nb_max, nb_n ? nb_sum / nb_n : 0.0, nb_n, leg_max);
+	if (command_line_wood_resp > 0.0)
+		fprintf(stderr, "FATES host wood decay (-demog_wood_resp %.3f): %.2f of %.2f kgC/m2 of CWD fragments "
+			"respired (site-area-weighted, whole run)\n", command_line_wood_resp,
+			tot_area_days ? tot_wresp / (tot_area_days / max(nb_n / (double) max(nsites, 1), 1.0)) : 0.0,
+			tot_area_days ? tot_wood / (tot_area_days / max(nb_n / (double) max(nsites, 1), 1.0)) : 0.0);
 	if ((command_line[0].demog_flag == 3) && command_line[0].demog_nneed)
 		fprintf(stderr, "FATES host plant-priority N (-demog_nneed): %ld site-days, growth-need priority "
 			"%.4f of %.4f gN/m2/day granted (site means)\n", nn_days,
@@ -1763,4 +1806,5 @@ void veg_host_finish(struct command_line_object *command_line)
 	free(site_tleg); site_tleg = NULL;
 	free(site_nh4); free(site_no3); free(site_nprev); free(site_legacy0);
 	site_nh4 = site_no3 = site_nprev = site_legacy0 = NULL;
+	free(site_wresp); site_wresp = NULL;
 }

@@ -110,7 +110,7 @@ struct	command_line_object	*construct_command_line(
 	command_line[0].demog_restart = 0;
 	command_line[0].fates_mgmtfile[0] = '\0';
 	command_line[0].demog_nneed = 0;
-	command_line[0].demog_canopy_frac = 0;
+	command_line[0].demog_wood_resp = 0.0;
 	command_line[0].vgsen_flag = 0;
 	command_line[0].FillSpill_flag=0;	
 	command_line[0].evap_use_longwave_flag = 0;
@@ -405,9 +405,18 @@ printf("%s ",command_line[0].WUI_filename);
 				command_line[0].demog_nneed = 1;
 				i++;
 			}
-			else if ( strcmp(main_argv[i],"-demog_canopy_frac") == 0 ){
-				/* FATES LAI / conductance per ground area: weight by crown-covered fraction */
-				command_line[0].demog_canopy_frac = 1;
+			else if ( strcmp(main_argv[i],"-demog_wood_resp") == 0 ){
+				/* fraction of FATES CWD fragmentation C respired by wood decay */
+				i++;
+				if ((i == main_argc) || (valid_option(main_argv[i])==1)){
+					fprintf(stderr,"FATAL ERROR: fraction not specified after -demog_wood_resp\n");
+					exit(EXIT_FAILURE);
+				} /*end if*/
+				command_line[0].demog_wood_resp = strtod(main_argv[i], NULL);
+				if ((command_line[0].demog_wood_resp < 0.0) || (command_line[0].demog_wood_resp >= 1.0)) {
+					fprintf(stderr,"FATAL ERROR: -demog_wood_resp must be in [0, 1)\n");
+					exit(EXIT_FAILURE);
+				}
 				i++;
 			}
 			else if ( strcmp(main_argv[i],"-demog_mgmt") == 0 ){
@@ -1461,6 +1470,10 @@ printf("%s ",command_line[0].WUI_filename);
 
 	if ((command_line[0].fates_mgmtfile[0] != '\0') && (command_line[0].demog_flag != 3)) {
 		fprintf(stderr, "FATAL ERROR: -demog_mgmt needs -demog <params> 3\n");
+		exit(EXIT_FAILURE);
+	}
+	if ((command_line[0].demog_wood_resp > 0.0) && (command_line[0].demog_flag != 3)) {
+		fprintf(stderr, "FATAL ERROR: -demog_wood_resp needs -demog <params> 3\n");
 		exit(EXIT_FAILURE);
 	}
 	if ((command_line[0].demog_restart == 1) && (command_line[0].demog_flag == 0)) {

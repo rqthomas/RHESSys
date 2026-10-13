@@ -195,6 +195,8 @@ typedef void (*veg_set_ndemand_t)(int *mode);
 typedef void (*veg_site_nneed_t)(int *site, double *need);
 /* today's FATES litter by source (g/m2/day): C leaf, seed, AG CWD, fine root, BG CWD; then N likewise */
 typedef void (*veg_litter_src_t)(int *site, double *v);
+/* FATES CWD fragmentation split: v[0] cellulose, v[1] lignin fraction */
+typedef void (*veg_cwd_frac_t)(double *v);
 /* FATES live leaf C of a site (kgC/m2), WMFire fuel */
 typedef void (*veg_leaf_c_t)(int *site, double *leafc);
 typedef void (*veg_mgmt_init_t)(const char *file, size_t *flen, int *nsites, int *pid,
@@ -228,6 +230,7 @@ extern veg_inv_assign_t    p_veg_inv_assign;
 extern veg_set_ndemand_t   p_veg_set_ndemand;
 extern veg_site_nneed_t    p_veg_site_nneed;
 extern veg_litter_src_t    p_veg_litter_src;
+extern veg_cwd_frac_t      p_veg_cwd_frac;
 
 #define veg_init       (*p_veg_init)
 #define veg_init_site  (*p_veg_init_site)
@@ -246,6 +249,7 @@ extern veg_litter_src_t    p_veg_litter_src;
 #define veg_set_ndemand   (*p_veg_set_ndemand)
 #define veg_site_nneed    (*p_veg_site_nneed)
 #define veg_litter_src    (*p_veg_litter_src)
+#define veg_cwd_frac      (*p_veg_cwd_frac)
 
 /* Select the backend: "legacy" (default) or "fates". 0 on success. */
 int prime_veg(const char *which);

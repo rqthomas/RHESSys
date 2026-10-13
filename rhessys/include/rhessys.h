@@ -2440,7 +2440,7 @@ struct  command_line_object
         int             demog_restart;                    /* 1 = start FATES from <world file>.fates (+ .fates_host) (-demog_restart) */
         char            fates_mgmtfile[FILEPATH_LEN];     /* FATES forest-management driver file (-demog_mgmt); empty = none */
         int             demog_nneed;                      /* 1 = growth-based FATES plant N demand (-demog_nneed), 0 = RD capacity */
-        int             demog_canopy_frac;                /* 1 = weight FATES canopy quantities by canopy fraction (-demog_canopy_frac) */
+        double          demog_wood_resp;                  /* fraction of FATES CWD fragmentation C respired by wood decay before RHESSys litter (-demog_wood_resp) */
         int             routing_flag;
         int             surface_routing_flag;
         int             stream_routing_flag;

@@ -148,11 +148,6 @@ module rhessys_fates
    !       as legacy RHESSys sets plant demand from potential growth. The same weights
    !       share the granted N among cohorts.
    integer, save :: ndemand_mode = 0
-   ! canopy-area quantities (LAI, SAI, sun/shade LAI, canopy conductance, absorbed
-   ! radiation) of a FATES patch are per area covered by crowns; CLM weights them by
-   ! bc_out%canopy_fraction_pa (crown-covered fraction x patch area). 0 = weight by
-   ! patch area (Phase 2-6 behaviour), 1 = by canopy fraction (-demog_canopy_frac)
-   integer, save :: canopy_weight_mode = 0
 
    ! litter C handed to the host today by FATES source (gC/m2/day), per site:
    ! 1 leaf fines, 2 seeds, 3 above-ground CWD, 4 fine roots, 5 below-ground CWD;
@@ -523,8 +518,10 @@ subroutine sample_site(s, out, with_fluxes)
             if (prt_params%phen_leaf_habit(ccohort%pft) == ievergreen) wl_evg = wl_evg + w
             ccohort => ccohort%shorter
          end do
-         w = cpatch%area * area_inv
-         if (canopy_weight_mode == 1) w = bo%canopy_fraction_pa(ifp)
+         ! canopy-area quantities (LAI, SAI, sun/shade LAI, canopy conductance, absorbed
+         ! radiation) of a FATES patch are per area covered by crowns; weight them, as
+         ! CLM does, by bc_out%canopy_fraction_pa (crown-covered fraction x patch area)
+         w = bo%canopy_fraction_pa(ifp)
          out%tlai = out%tlai + w * bo%tlai_pa(ifp)
          out%elai = out%elai + w * bo%elai_pa(ifp)
          out%tsai = out%tsai + w * bo%tsai_pa(ifp)
@@ -986,9 +983,8 @@ end subroutine mort_accumulate
 !-------------------------------------------------------------------------------
 subroutine rhessys_veg_set_ndemand(mode) bind(C, name='rhessys_veg_set_ndemand')
    integer(c_int), intent(in) :: mode
-   ! bit 0: growth-based N demand / plant priority; bit 1: canopy-fraction weighting
+   ! 1 = growth-based N demand / plant priority (-demog_nneed)
    ndemand_mode = iand(int(mode), 1)
-   canopy_weight_mode = iand(int(mode), 2) / 2
 end subroutine rhessys_veg_set_ndemand
 
 !-------------------------------------------------------------------------------
@@ -1341,6 +1337,15 @@ subroutine rhessys_veg_litter_src(site, v) bind(C, name='rhessys_veg_litter_src'
 end subroutine rhessys_veg_litter_src
 
 !-------------------------------------------------------------------------------
+! FATES CWD fragmentation split into cellulose / lignin (fates_frag_cwd_fcel/flig)
+!-------------------------------------------------------------------------------
+subroutine rhessys_veg_cwd_frac(v) bind(C, name='rhessys_veg_cwd_frac')
+   real(c_double), intent(out) :: v(2)
+   v(1) = ED_val_cwd_fcel
+   v(2) = ED_val_cwd_flig
+end subroutine rhessys_veg_cwd_frac
+
+!-------------------------------------------------------------------------------
 ! Live leaf C of site s (kgC/m2), WMFire canopy fuel
 !-------------------------------------------------------------------------------
 subroutine rhessys_veg_leaf_c(site, leafc) bind(C, name='rhessys_veg_leaf_c')
@@ -1427,13 +1432,13 @@ subroutine litter_split(s, out)
             lit_src(4, s) = lit_src(4, s) + sum(litt%root_fines_frag(:, 1:nlev_eff)) * af * 1000.0_r8
             lit_src(5, s) = lit_src(5, s) + sum(litt%bg_cwd_frag(:, 1:nlev_eff)) * af * 1000.0_r8
             out%leaf_litter_c = out%leaf_litter_c + sum(litt%leaf_fines(:)) * af
+            out%ag_cwd_c      = out%ag_cwd_c + sum(litt%ag_cwd(:)) * af
          else
             lit_src(6, s) = lit_src(6, s) + sum(litt%leaf_fines_frag(:)) * af * 1000.0_r8
             lit_src(7, s) = lit_src(7, s) + (sum(litt%seed_decay(:)) + sum(litt%seed_germ_decay(:))) * af * 1000.0_r8
             lit_src(8, s) = lit_src(8, s) + sum(litt%ag_cwd_frag(:)) * af * 1000.0_r8
             lit_src(9, s) = lit_src(9, s) + sum(litt%root_fines_frag(:, 1:nlev_eff)) * af * 1000.0_r8
             lit_src(10, s) = lit_src(10, s) + sum(litt%bg_cwd_frag(:, 1:nlev_eff)) * af * 1000.0_r8
-            out%ag_cwd_c      = out%ag_cwd_c + sum(litt%ag_cwd(:)) * af
          end if
          cpatch => cpatch%younger
       end do
