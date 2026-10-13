@@ -90,7 +90,7 @@ ifdef fates
   FATES_LIB ?= $(FATES_DIR)/lib
   FFLAGS = -g -O2 -cpp -ffree-line-length-none -fopenmp -I$(FATES_INC)
   LDLIBS_FATES = -L$(FATES_LIB) -lfates -llapack -lblas -lgfortran -lgomp
-  VEG_FORTRAN_OBJ = $(OBJ)/rhessys_fates.o
+  VEG_FORTRAN_OBJ = $(OBJ)/rhessys_fates_mgmt.o $(OBJ)/rhessys_fates.o
 else
   LDLIBS_FATES =
   VEG_FORTRAN_OBJ =
@@ -481,7 +481,9 @@ soil_adaptor_test: Testing/soil_adaptor_test.c fates/rhessys_soil_adaptor.c incl
 		hydro/compute_soil_water_potential.c -lm -o $(OBJ)/soil_adaptor_test
 	$(OBJ)/soil_adaptor_test
 ifdef fates
-$(OBJ)/rhessys_fates.o: fates/rhessys_fates.F90 include/rhessys_veg.h
+$(OBJ)/rhessys_fates_mgmt.o: fates/rhessys_fates_mgmt.F90
+	$(FC) -c $(FFLAGS) -I include fates/rhessys_fates_mgmt.F90 -o $(OBJ)/rhessys_fates_mgmt.o
+$(OBJ)/rhessys_fates.o: fates/rhessys_fates.F90 include/rhessys_veg.h $(OBJ)/rhessys_fates_mgmt.o
 	$(FC) -c $(FFLAGS) -I include fates/rhessys_fates.F90 -o $(OBJ)/rhessys_fates.o
 endif
 

@@ -61,6 +61,7 @@ module rhessys_fates
    use EDParamsMod,          only : ED_val_cwd_fcel, ED_val_cwd_flig
    use EDLoggingMortalityMod, only : host_logging_trigger    ! local FATES patch (fates/patches)
    use EDTypesMod,           only : area_inv
+   use rhessys_fates_mgmt,   only : mgmt_init, mgmt_pre, mgmt_post, mgmt_write_day, mgmt_summary
    use FatesPatchMod,        only : fates_patch_type
    use FatesCohortMod,       only : fates_cohort_type
    use shr_kind_mod,         only : r8 => shr_kind_r8
@@ -94,6 +95,9 @@ module rhessys_fates
       real(c_double) :: w_scalar, t_scalar
       real(c_double) :: n_uptake_nh4, n_uptake_no3
       real(c_double) :: dist_kind, fire_mort(2), crown_burn(2), fuel_burn_leaf, fuel_burn_twig
+      real(c_double) :: thin_frac(2)
+      real(c_double) :: wm_frac, wm_burn, wm_litter_consumed
+      real(c_double) :: wm_under_mort, wm_consumption, wm_over_k1, wm_over_k2, wm_under_h, wm_over_h
    end type veg_bc_t
 
    type, bind(C) :: veg_out_t
@@ -136,6 +140,27 @@ module rhessys_fates
    logical, save :: fates_is_init = .false.
    integer, save :: fates_log_unit = -1        ! newunit= gives a NEGATIVE unit number
    logical, save :: fates_log_open = .false.
+
+   ! Plant N demand handed to RHESSys's soil competition (mode 3):
+   !   0 = RD uptake capacity only: fine-root C x (Vmax NH4 + Vmax NO3)
+   !   1 = growth-based (-demog_nneed): per cohort max(capacity, potential growth N need),
+   !       need = potential C gain (GPP - maintenance resp, less growth resp) x tissue N:C,
+   !       as legacy RHESSys sets plant demand from potential growth. The same weights
+   !       share the granted N among cohorts.
+   integer, save :: ndemand_mode = 0
+   ! canopy-area quantities (LAI, SAI, sun/shade LAI, canopy conductance, absorbed
+   ! radiation) of a FATES patch are per area covered by crowns; CLM weights them by
+   ! bc_out%canopy_fraction_pa (crown-covered fraction x patch area). 0 = weight by
+   ! patch area (Phase 2-6 behaviour), 1 = by canopy fraction (-demog_canopy_frac)
+   integer, save :: canopy_weight_mode = 0
+
+   ! litter C handed to the host today by FATES source (gC/m2/day), per site:
+   ! 1 leaf fines, 2 seeds, 3 above-ground CWD, 4 fine roots, 5 below-ground CWD;
+   ! 6-10 the same for N (gN/m2/day, mode 3)
+   real(r8), allocatable, save :: lit_src(:,:)
+
+   ! per-patch inventories: inventory index (0-based) of each site, cold start only
+   integer, allocatable, save :: inv_idx(:)
 
    ! Annual demography diagnostic (<output prefix>_fates_mort.csv): site-mean
    ! (unweighted over sites) stems, biomass, NPP, C lost per mortality mechanism,
@@ -413,6 +438,7 @@ subroutine rhessys_veg_coldstart(out_all) bind(C, name=_VEG_COLDSTART)
    type(veg_out_t), intent(out) :: out_all(*)
    integer :: s
    integer, allocatable :: fcolumn(:)
+   real(r8), allocatable :: lat_keep(:), lon_keep(:)
 
    do s = 1, fates%nsites
       out_all(s)%gpp_day = 0; out_all(s)%gpp_night = 0; out_all(s)%resp_m = 0
@@ -421,7 +447,24 @@ subroutine rhessys_veg_coldstart(out_all) bind(C, name=_VEG_COLDSTART)
    end do
 
    call set_site_properties(fates%nsites, fates%sites, fates%bc_in)
+   if (allocated(inv_idx)) then
+      ! per-patch inventories: FATES matches each site to the nearest inventory
+      ! by lat/lon; give every site its inventory's placeholder coordinate
+      ! (host-written control file, 1-degree grid) for the read only
+      allocate(lat_keep(fates%nsites), lon_keep(fates%nsites))
+      do s = 1, fates%nsites
+         lat_keep(s) = fates%sites(s)%lat; lon_keep(s) = fates%sites(s)%lon
+         fates%sites(s)%lat = -80.0_r8 + real(inv_idx(s) / 360, r8)
+         fates%sites(s)%lon = real(mod(inv_idx(s), 360), r8)
+      end do
+   end if
    call init_patches(fates%nsites, fates%sites, fates%bc_in)
+   if (allocated(inv_idx)) then
+      do s = 1, fates%nsites
+         fates%sites(s)%lat = lat_keep(s); fates%sites(s)%lon = lon_keep(s)
+      end do
+      deallocate(lat_keep, lon_keep, inv_idx)
+   end if
    do s = 1, fates%nsites
       fates%bc_in(s)%max_rooting_depth_index_col = fates%bc_in(s)%nlevsoil
       call ed_update_site(fates%sites(s), fates%bc_in(s), fates%bc_out(s), is_restarting=.false.)
@@ -481,16 +524,17 @@ subroutine sample_site(s, out, with_fluxes)
             ccohort => ccohort%shorter
          end do
          w = cpatch%area * area_inv
+         if (canopy_weight_mode == 1) w = bo%canopy_fraction_pa(ifp)
          out%tlai = out%tlai + w * bo%tlai_pa(ifp)
          out%elai = out%elai + w * bo%elai_pa(ifp)
          out%tsai = out%tsai + w * bo%tsai_pa(ifp)
-         out%htop = out%htop + w * bo%htop_pa(ifp)
+         out%htop = out%htop + cpatch%area * area_inv * bo%htop_pa(ifp)
          if (with_fluxes) then
             rb = bi%rb_pa(ifp)
             out%laisun = out%laisun + w * bo%laisun_pa(ifp)
             out%laisha = out%laisha + w * bo%laisha_pa(ifp)
-            out%rssun  = out%rssun  + w * bo%rssun_pa(ifp)
-            out%rssha  = out%rssha  + w * bo%rssha_pa(ifp)
+            out%rssun  = out%rssun  + cpatch%area * area_inv * bo%rssun_pa(ifp)
+            out%rssha  = out%rssha  + cpatch%area * area_inv * bo%rssha_pa(ifp)
             if (bo%laisun_pa(ifp) > 0.0_r8) &
                out%gc_canopy = out%gc_canopy + w * bo%laisun_pa(ifp) / (rb + bo%rssun_pa(ifp))
             if (bo%laisha_pa(ifp) > 0.0_r8) &
@@ -500,7 +544,7 @@ subroutine sample_site(s, out, with_fluxes)
                     (bi%solad_parb(ifp,ib) * bo%fabd_parb(ifp,ib) + &
                      bi%solai_parb(ifp,ib) * bo%fabi_parb(ifp,ib))
             end do
-            out%btran = out%btran + w * bo%btran_pa(ifp)
+            out%btran = out%btran + cpatch%area * area_inv * bo%btran_pa(ifp)
          end if
          cpatch => cpatch%younger
       end do
@@ -747,7 +791,9 @@ subroutine rhessys_veg_do(site, bc, out) bind(C, name=_VEG_DO)
 
    ! Phase 6: host-imposed fire / harvest for today (always resets yesterday's)
    call apply_disturbance(s, bc)
+   if (cnp_coupled) call mgmt_pre(fates%sites(s), s, nint(bc%dist_kind), bc%thin_frac)
    call ed_ecosystem_dynamics(fates%sites(s), fates%bc_in(s), fates%bc_out(s))
+   if (cnp_coupled) call mgmt_post(fates%sites(s), s, fates%bc_in(s))
    call ed_update_site(fates%sites(s), fates%bc_in(s), fates%bc_out(s), is_restarting=.false.)
    call UpdateFatesAvgSnowDepth(fates%sites(s:s), fates%bc_in(s:s))
    call canopy_summarization(1, fates%sites(s:s), fates%bc_in(s:s))
@@ -772,7 +818,32 @@ subroutine rhessys_veg_do_all(nsites, bcs, outs) bind(C, name=_VEG_DO_ALL)
    end do
    !$omp end parallel do
    call mort_accumulate(int(nsites))
+   if (cnp_coupled) call mgmt_write_day()
 end subroutine rhessys_veg_do_all
+
+!-------------------------------------------------------------------------------
+! Forest management (rhessys_fates_mgmt.F90): read the driver file (may be
+! empty: TEC thinning only), RHESSys patch / zone / hillslope ID per site.
+!-------------------------------------------------------------------------------
+subroutine rhessys_veg_mgmt_init(c_file, flen, nsites, pid, zid, hid) bind(C, name='rhessys_veg_mgmt_init')
+   character(kind=c_char), intent(in) :: c_file(*)
+   integer(c_size_t),      intent(in) :: flen
+   integer(c_int),         intent(in) :: nsites
+   integer(c_int),         intent(in) :: pid(nsites), zid(nsites), hid(nsites)
+   character(len=1024) :: fname
+   integer :: i
+   fname = ''
+   do i = 1, min(int(flen), len(fname))
+      fname(i:i) = c_file(i)
+   end do
+   i = index(mort_file, '_fates_mort.csv', back=.true.)
+   if (i > 0) then
+      call mgmt_init(trim(fname), int(nsites), pid, zid, hid, fates_log_unit, &
+           mort_file(1:i-1)//'_fates_mgmt.csv')
+   else
+      call mgmt_init(trim(fname), int(nsites), pid, zid, hid, fates_log_unit, 'rhessys_fates_mgmt.csv')
+   end if
+end subroutine rhessys_veg_mgmt_init
 
 !-------------------------------------------------------------------------------
 ! Demography diagnostic: cumulative termination / impact-mortality C over all
@@ -872,6 +943,9 @@ subroutine mort_accumulate(nsites)
             a(1) = a(1) + nm2
             a(2) = a(2) + nm2 * ctot
             a(3) = a(3) + nm2 * fin(ccohort%npp_acc_hold) / 365.0_r8
+            ! today's recruits have no mortality rates yet (FATES leaves hmort
+            ! uninitialised until their first mortality_rates call)
+            if (.not. ccohort%isnew) then
             a(4)  = a(4)  + nm2 * ctot * fin(ccohort%bmort)  / 365.0_r8
             a(5)  = a(5)  + nm2 * ctot * fin(ccohort%cmort)  / 365.0_r8
             a(6)  = a(6)  + nm2 * ctot * fin(ccohort%hmort)  / 365.0_r8
@@ -879,6 +953,7 @@ subroutine mort_accumulate(nsites)
             a(8)  = a(8)  + nm2 * ctot * fin(ccohort%smort)  / 365.0_r8
             a(9)  = a(9)  + nm2 * ctot * fin(ccohort%asmort) / 365.0_r8
             a(10) = a(10) + nm2 * ctot * fin(ccohort%dgmort) / 365.0_r8
+            end if
             a(11) = a(11) + nm2 * storec
             a(14) = a(14) + nm2 * ctot
             a(18) = a(18) + nm2 * leafc
@@ -907,6 +982,82 @@ contains
 end subroutine mort_accumulate
 
 !-------------------------------------------------------------------------------
+! Plant N demand mode (see ndemand_mode); called by the host before the run
+!-------------------------------------------------------------------------------
+subroutine rhessys_veg_set_ndemand(mode) bind(C, name='rhessys_veg_set_ndemand')
+   integer(c_int), intent(in) :: mode
+   ! bit 0: growth-based N demand / plant priority; bit 1: canopy-fraction weighting
+   ndemand_mode = iand(int(mode), 1)
+   canopy_weight_mode = iand(int(mode), 2) / 2
+end subroutine rhessys_veg_set_ndemand
+
+!-------------------------------------------------------------------------------
+! A cohort's N uptake claim per plant (kgN/plant/s): RD capacity, or (mode 1) the
+! larger of capacity and potential growth N need
+!-------------------------------------------------------------------------------
+real(r8) function n_claim(c)
+   type(fates_cohort_type), pointer, intent(in) :: c
+   integer  :: ft
+   ft  = c%pft
+   n_claim = c%prt%GetState(fnrt_organ, carbon12_element) * &
+        (EDPftvarcon_inst%vmax_nh4(ft) + EDPftvarcon_inst%vmax_no3(ft))
+   if (ndemand_mode == 1) n_claim = max(n_claim, n_need(c))
+end function n_claim
+
+! potential growth N need per plant (kgN/plant/s): potential C gain for growth
+! (annualised GPP - maintenance resp, less growth resp) x tissue N:C at target
+! stoichiometry (leaf, fine root, sapwood, structure)
+real(r8) function n_need(c)
+   use, intrinsic :: ieee_arithmetic, only : ieee_is_finite
+   type(fates_cohort_type), pointer, intent(in) :: c
+   real(r8) :: gain, cl, cf, cs, ct, nt
+   integer  :: ft
+   ft  = c%pft
+   ! potential C gain for growth (kgC/plant/s): annualised GPP - maintenance resp,
+   ! less growth respiration
+   gain = 0.0_r8
+   if (ieee_is_finite(c%gpp_acc_hold) .and. ieee_is_finite(c%resp_m_acc_hold)) &
+        gain = max(c%gpp_acc_hold - c%resp_m_acc_hold, 0.0_r8) * &
+               (1.0_r8 - prt_params%grperc(ft)) / (365.0_r8 * 86400.0_r8)
+   ! tissue N:C at target stoichiometry (leaf, fine root, sapwood, structure)
+   cl = c%prt%GetState(leaf_organ,   carbon12_element)
+   cf = c%prt%GetState(fnrt_organ,   carbon12_element)
+   cs = c%prt%GetState(sapw_organ,   carbon12_element)
+   ct = c%prt%GetState(struct_organ, carbon12_element)
+   nt = cl * prt_params%nitr_stoich_p1(ft, prt_params%organ_param_id(leaf_organ)) + &
+        cf * prt_params%nitr_stoich_p1(ft, prt_params%organ_param_id(fnrt_organ)) + &
+        cs * prt_params%nitr_stoich_p1(ft, prt_params%organ_param_id(sapw_organ)) + &
+        ct * prt_params%nitr_stoich_p1(ft, prt_params%organ_param_id(struct_organ))
+   if (cl + cf + cs + ct > 0.0_r8) then
+      n_need = gain * nt / (cl + cf + cs + ct)
+   else
+      n_need = gain * prt_params%nitr_stoich_p1(ft, prt_params%organ_param_id(leaf_organ))
+   end if
+end function n_need
+
+!-------------------------------------------------------------------------------
+! Site potential growth N need (kgN/m2/day), for the host's plant-priority uptake
+!-------------------------------------------------------------------------------
+subroutine rhessys_veg_site_nneed(site, need) bind(C, name='rhessys_veg_site_nneed')
+   integer(c_int), intent(in)  :: site
+   real(c_double), intent(out) :: need
+   type(fates_patch_type),  pointer :: cpatch
+   type(fates_cohort_type), pointer :: ccohort
+   need = 0.0_r8
+   if (site < 1 .or. site > fates%nsites) return
+   cpatch => fates%sites(site)%oldest_patch
+   do while (associated(cpatch))
+      ccohort => cpatch%tallest
+      do while (associated(ccohort))
+         need = need + n_need(ccohort) * ccohort%n
+         ccohort => ccohort%shorter
+      end do
+      cpatch => cpatch%younger
+   end do
+   need = need * area_inv * 86400.0_r8
+end subroutine rhessys_veg_site_nneed
+
+!-------------------------------------------------------------------------------
 ! Split the site's daily N uptake (gN/m2) over the cohorts (FATES competitors in
 ! coupled N uptake mode: one per cohort, in oldest-patch / tallest-cohort order)
 ! in proportion to their RD capacity, fine-root C x (Vmax NH4 + Vmax NO3).
@@ -933,8 +1084,12 @@ subroutine distribute_n_uptake(s, nh4, no3, recv)
             ccohort => cpatch%tallest
             do while (associated(ccohort))
                icomp = icomp + 1
-               w = ccohort%prt%GetState(fnrt_organ, carbon12_element) * ccohort%n * &
-                   (EDPftvarcon_inst%vmax_nh4(ccohort%pft) + EDPftvarcon_inst%vmax_no3(ccohort%pft))
+               if (ndemand_mode == 1) then
+                  w = n_claim(ccohort) * ccohort%n
+               else
+                  w = ccohort%prt%GetState(fnrt_organ, carbon12_element) * ccohort%n * &
+                      (EDPftvarcon_inst%vmax_nh4(ccohort%pft) + EDPftvarcon_inst%vmax_no3(ccohort%pft))
+               end if
                if (pass == 1) then
                   wsum = wsum + w
                else if (wsum > 0.0_r8 .and. icomp <= size(bi%plant_nh4_uptake_flux, 1)) then
@@ -967,9 +1122,13 @@ subroutine nutrient_out(s, out)
    do while (associated(cpatch))
       ccohort => cpatch%tallest
       do while (associated(ccohort))
-         out%ncap = out%ncap + ccohort%prt%GetState(fnrt_organ, carbon12_element) * &
-              ccohort%n * area_inv * 1000.0_r8 * 86400.0_r8 * &
-              (EDPftvarcon_inst%vmax_nh4(ccohort%pft) + EDPftvarcon_inst%vmax_no3(ccohort%pft))
+         if (ndemand_mode == 1) then
+            out%ncap = out%ncap + n_claim(ccohort) * ccohort%n * area_inv * 1000.0_r8 * 86400.0_r8
+         else
+            out%ncap = out%ncap + ccohort%prt%GetState(fnrt_organ, carbon12_element) * &
+                 ccohort%n * area_inv * 1000.0_r8 * 86400.0_r8 * &
+                 (EDPftvarcon_inst%vmax_nh4(ccohort%pft) + EDPftvarcon_inst%vmax_no3(ccohort%pft))
+         end if
          ccohort => ccohort%shorter
       end do
       cpatch => cpatch%younger
@@ -1047,6 +1206,10 @@ subroutine apply_disturbance(s, bc)
    integer :: kind, h
    kind = nint(bc%dist_kind)
    host_logging_trigger = (kind == 2)
+   if (kind == 4) then
+      call apply_wmfire(s, bc)
+      return
+   end if
    cpatch => fates%sites(s)%oldest_patch
    do while (associated(cpatch))
       cpatch%fire = 0
@@ -1076,6 +1239,130 @@ subroutine apply_disturbance(s, bc)
 end subroutine apply_disturbance
 
 !-------------------------------------------------------------------------------
+! WMFire fire on site s (dist_kind 4, -demog 3 + -firespread): WMFire decides where
+! and how hard it burns; FATES does the fire. In the burned fraction wm_frac of every
+! FATES patch, cohort mortality follows WMFire's own rules (compute_family_fire_effects)
+! at the mean intensity p = wm_burn of the burned cells:
+!   understory (height <= under_h): m_u = (k^p - 1)/(k - 1), k = understory_mort (k = 1: p)
+!   overstory  (height >  over_h) : m_o = 1 - 1/(1 + exp(-k1 (U - k2))), U = understory
+!       C consumed (kgC/m2: m_u x consumed share x above-ground C of understory cohorts)
+!       + litter C consumed per m2 burned (host)
+!   in between: linear blend by height. Consumed share of the killed (crown burned):
+!   same form with k = consumption. Litter / CWD fuel consumed: WMFire's fractions
+!   (leaves 1, twigs + small branches 0.85, large branches + trunks 0.339).
+!-------------------------------------------------------------------------------
+subroutine apply_wmfire(s, bc)
+   integer,        intent(in) :: s
+   type(veg_bc_t), intent(in) :: bc
+   type(fates_patch_type),  pointer :: cpatch
+   type(fates_cohort_type), pointer :: ccohort
+   real(r8) :: p, mu, cu, mo, m, up, under_c, U, hu, ho, ag
+   hu = bc%wm_under_h; ho = max(bc%wm_over_h, hu + 1.0e-6_r8)
+   p  = min(max(bc%wm_burn, 0.0_r8), 1.0_r8)
+   mu = wm_mort(bc%wm_under_mort, p)
+   cu = wm_mort(bc%wm_consumption, mu)
+   under_c = 0.0_r8
+   cpatch => fates%sites(s)%oldest_patch
+   do while (associated(cpatch))
+      ccohort => cpatch%tallest
+      do while (associated(ccohort))
+         if (ccohort%height <= hu) then
+            ag = prt_params%allom_agb_frac(ccohort%pft)
+            under_c = under_c + ccohort%n * area_inv * ( &
+                 ccohort%prt%GetState(leaf_organ, carbon12_element) + ag * ( &
+                 ccohort%prt%GetState(sapw_organ, carbon12_element) + &
+                 ccohort%prt%GetState(struct_organ, carbon12_element)))
+         end if
+         ccohort => ccohort%shorter
+      end do
+      cpatch => cpatch%younger
+   end do
+   U  = under_c * mu * cu + max(bc%wm_litter_consumed, 0.0_r8)
+   mo = 1.0_r8 - 1.0_r8 / (1.0_r8 + exp(-(bc%wm_over_k1 * (U - bc%wm_over_k2))))
+   cpatch => fates%sites(s)%oldest_patch
+   do while (associated(cpatch))
+      cpatch%fire = 1
+      cpatch%frac_burnt = min(max(bc%wm_frac, 0.0_r8), 0.98_r8)
+      cpatch%fuel%frac_burnt(:) = 0.0_r8
+      cpatch%fuel%frac_burnt(1:2) = 0.85_r8
+      cpatch%fuel%frac_burnt(3:4) = 0.339_r8
+      cpatch%fuel%frac_burnt(5:6) = 1.0_r8
+      ccohort => cpatch%tallest
+      do while (associated(ccohort))
+         if (ccohort%height <= hu) then
+            m = mu
+         else if (ccohort%height > ho) then
+            m = mo
+         else
+            up = (ho - ccohort%height) / (ho - hu)
+            m = up * mu + (1.0_r8 - up) * mo
+         end if
+         ccohort%fire_mort = min(max(m, 0.0_r8), 1.0_r8)
+         ccohort%fraction_crown_burned = min(max(wm_mort(bc%wm_consumption, m), 0.0_r8), 1.0_r8)
+         ccohort => ccohort%shorter
+      end do
+      cpatch => cpatch%younger
+   end do
+contains
+   real(r8) function wm_mort(k, x)
+      real(r8), intent(in) :: k, x
+      if (abs(k - 1.0_r8) < 1.0e-9_r8) then
+         wm_mort = k * x
+      else if (k > 0.0_r8) then
+         wm_mort = (k**x - 1.0_r8) / (k - 1.0_r8)
+      else
+         wm_mort = x
+      end if
+   end function wm_mort
+end subroutine apply_wmfire
+
+!-------------------------------------------------------------------------------
+! Per-patch inventories: inventory index (0-based, order of the host-written
+! FATES control file) of every site; used by the next cold start
+!-------------------------------------------------------------------------------
+subroutine rhessys_veg_inv_assign(nsites, idx) bind(C, name='rhessys_veg_inv_assign')
+   integer(c_int), intent(in) :: nsites
+   integer(c_int), intent(in) :: idx(nsites)
+   if (allocated(inv_idx)) deallocate(inv_idx)
+   allocate(inv_idx(nsites))
+   inv_idx = idx
+end subroutine rhessys_veg_inv_assign
+
+!-------------------------------------------------------------------------------
+! Today's FATES litter C to the host by source (gC/m2/day), see lit_src
+!-------------------------------------------------------------------------------
+subroutine rhessys_veg_litter_src(site, v) bind(C, name='rhessys_veg_litter_src')
+   integer(c_int), intent(in)  :: site
+   real(c_double), intent(out) :: v(10)
+   v = 0.0_r8
+   if (.not. allocated(lit_src)) return
+   if (site < 1 .or. site > fates%nsites) return
+   v = lit_src(:, site)
+end subroutine rhessys_veg_litter_src
+
+!-------------------------------------------------------------------------------
+! Live leaf C of site s (kgC/m2), WMFire canopy fuel
+!-------------------------------------------------------------------------------
+subroutine rhessys_veg_leaf_c(site, leafc) bind(C, name='rhessys_veg_leaf_c')
+   integer(c_int), intent(in)  :: site
+   real(c_double), intent(out) :: leafc
+   type(fates_patch_type),  pointer :: cpatch
+   type(fates_cohort_type), pointer :: ccohort
+   leafc = 0.0_r8
+   if (site < 1 .or. site > fates%nsites) return
+   cpatch => fates%sites(site)%oldest_patch
+   do while (associated(cpatch))
+      ccohort => cpatch%tallest
+      do while (associated(ccohort))
+         leafc = leafc + ccohort%n * ccohort%prt%GetState(leaf_organ, carbon12_element)
+         ccohort => ccohort%shorter
+      end do
+      cpatch => cpatch%younger
+   end do
+   leafc = leafc * area_inv
+end subroutine rhessys_veg_leaf_c
+
+!-------------------------------------------------------------------------------
 ! Split today's FATES litter handoff into surface and below-ground parts
 ! (g/m2/day), term by term as FatesSoilBGCFluxMod::FluxIntoLitterPools builds
 ! the merged litt_flux (one decomposition layer: surface profile = 1):
@@ -1095,6 +1382,14 @@ subroutine litter_split(s, out)
 
    sur = 0.0_r8; blw = 0.0_r8
    out%leaf_litter_c = 0.0_r8; out%ag_cwd_c = 0.0_r8
+   if (.not. allocated(lit_src)) then
+      !$omp critical (lit_src_alloc)
+      if (.not. allocated(lit_src)) then
+         allocate(lit_src(10, fates%nsites)); lit_src = 0.0_r8
+      end if
+      !$omp end critical (lit_src_alloc)
+   end if
+   lit_src(:, s) = 0.0_r8
    ne = 1
    if (cnp_coupled) ne = 2
    nlev_eff = max(fates%bc_in(s)%max_rooting_depth_index_col, 1)
@@ -1126,7 +1421,18 @@ subroutine litter_split(s, out)
             blw(3,el) = blw(3,el) + litt%root_fines_frag(ilignin,j)    * af
          end do
          if (el == 1) then
+            lit_src(1, s) = lit_src(1, s) + sum(litt%leaf_fines_frag(:)) * af * 1000.0_r8
+            lit_src(2, s) = lit_src(2, s) + (sum(litt%seed_decay(:)) + sum(litt%seed_germ_decay(:))) * af * 1000.0_r8
+            lit_src(3, s) = lit_src(3, s) + sum(litt%ag_cwd_frag(:)) * af * 1000.0_r8
+            lit_src(4, s) = lit_src(4, s) + sum(litt%root_fines_frag(:, 1:nlev_eff)) * af * 1000.0_r8
+            lit_src(5, s) = lit_src(5, s) + sum(litt%bg_cwd_frag(:, 1:nlev_eff)) * af * 1000.0_r8
             out%leaf_litter_c = out%leaf_litter_c + sum(litt%leaf_fines(:)) * af
+         else
+            lit_src(6, s) = lit_src(6, s) + sum(litt%leaf_fines_frag(:)) * af * 1000.0_r8
+            lit_src(7, s) = lit_src(7, s) + (sum(litt%seed_decay(:)) + sum(litt%seed_germ_decay(:))) * af * 1000.0_r8
+            lit_src(8, s) = lit_src(8, s) + sum(litt%ag_cwd_frag(:)) * af * 1000.0_r8
+            lit_src(9, s) = lit_src(9, s) + sum(litt%root_fines_frag(:, 1:nlev_eff)) * af * 1000.0_r8
+            lit_src(10, s) = lit_src(10, s) + sum(litt%bg_cwd_frag(:, 1:nlev_eff)) * af * 1000.0_r8
             out%ag_cwd_c      = out%ag_cwd_c + sum(litt%ag_cwd(:)) * af
          end if
          cpatch => cpatch%younger
@@ -1326,6 +1632,7 @@ end subroutine rhessys_veg_dump_cohorts
 subroutine rhessys_veg_clean() bind(C, name=_VEG_CLEAN)
    ! TODO(Phase 5): deallocate site structures (FATES has no fates_clean yet).
    if (allocated(mort_acc)) call mort_write(size(fates%sites))
+   if (cnp_coupled .and. fates_log_open) call mgmt_summary(fates_log_unit)
    if (fates_log_open) then
       write(fates_log_unit,*) 'rhessys_fates: set_bc calls ', n_setbc, ', bc_in check failures ', n_bad_total
       close(fates_log_unit)

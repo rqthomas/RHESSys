@@ -101,12 +101,19 @@ struct veg_bc {
 	double	n_uptake_nh4;			/* (gN/m2/day) */
 	double	n_uptake_no3;			/* (gN/m2/day) */
 	/* Phase 6: today's disturbance from TEC events (mode 3).
-	   dist_kind 0 = none, 1 = fire (uniform severity), 2 = harvest (clear-cut) */
+	   dist_kind 0 = none, 1 = fire (uniform severity), 2 = harvest (clear-cut),
+	   3 = partial removal -> proportional thinning (thin_frac) */
 	double	dist_kind;
 	double	fire_mort[2];			/* (0-1) cohort mortality, [0] evergreen, [1] deciduous PFTs */
 	double	crown_burn[2];			/* (0-1) share of crowns burned (consumed) */
 	double	fuel_burn_leaf;			/* (0-1) FATES dead-leaf litter consumed */
 	double	fuel_burn_twig;			/* (0-1) FATES twig + small-branch CWD consumed */
+	double	thin_frac[2];			/* (0-1) stems removed, [0] evergreen, [1] deciduous PFTs */
+	/* dist_kind 4 = WMFire (execute_firespread_event, -firespread): burned fraction of the
+	   patch, mean burn intensity of its burned cells, RHESSys + FATES litter C consumed per
+	   m2 burned (kgC/m2), and WMFire's severity parameters (stratum / soil defaults) */
+	double	wm_frac, wm_burn, wm_litter_consumed;
+	double	wm_under_mort, wm_consumption, wm_over_k1, wm_over_k2, wm_under_h, wm_over_h;
 };
 
 /*--------------------------------------------------------------------------*/
@@ -177,6 +184,21 @@ typedef void (*veg_init_t)(const char *paramfile, size_t *len, const char *invfi
 /* FATES restart vectors <-> binary file (Phase 5) */
 typedef void (*veg_restart_write_t)(const char *file, size_t *flen);
 typedef void (*veg_restart_read_t)(const char *file, size_t *flen, struct veg_out *out_all);
+/* forest management (rhessys_fates_mgmt.F90): driver file + RHESSys patch/zone/hill
+   ID of each site; empty file = TEC thinning only */
+/* per-patch inventories: inventory index (0-based, as listed in the generated FATES
+   control file) of every site, before the cold start */
+typedef void (*veg_inv_assign_t)(int *nsites, int *idx);
+/* plant N demand mode: 0 = RD capacity, 1 = max(capacity, potential growth need) */
+typedef void (*veg_set_ndemand_t)(int *mode);
+/* site potential growth N need (kgN/m2/day) */
+typedef void (*veg_site_nneed_t)(int *site, double *need);
+/* today's FATES litter by source (g/m2/day): C leaf, seed, AG CWD, fine root, BG CWD; then N likewise */
+typedef void (*veg_litter_src_t)(int *site, double *v);
+/* FATES live leaf C of a site (kgC/m2), WMFire fuel */
+typedef void (*veg_leaf_c_t)(int *site, double *leafc);
+typedef void (*veg_mgmt_init_t)(const char *file, size_t *flen, int *nsites, int *pid,
+				int *zid, int *hid);
 typedef void (*veg_init_site_t)(int *site, int *patch_id, double *lat, struct veg_bc *bc);
 typedef void (*veg_coldstart_t)(struct veg_out *out_all);	/* fills out_all[0..nsites-1] */
 typedef void (*veg_set_time_t)(struct veg_time *t);
@@ -200,6 +222,12 @@ extern veg_clean_t     p_veg_clean;
 extern veg_dump_t      p_veg_dump;
 extern veg_restart_write_t p_veg_restart_write;
 extern veg_restart_read_t  p_veg_restart_read;
+extern veg_mgmt_init_t     p_veg_mgmt_init;
+extern veg_leaf_c_t        p_veg_leaf_c;
+extern veg_inv_assign_t    p_veg_inv_assign;
+extern veg_set_ndemand_t   p_veg_set_ndemand;
+extern veg_site_nneed_t    p_veg_site_nneed;
+extern veg_litter_src_t    p_veg_litter_src;
 
 #define veg_init       (*p_veg_init)
 #define veg_init_site  (*p_veg_init_site)
@@ -212,6 +240,12 @@ extern veg_restart_read_t  p_veg_restart_read;
 #define veg_dump       (*p_veg_dump)
 #define veg_restart_write (*p_veg_restart_write)
 #define veg_restart_read  (*p_veg_restart_read)
+#define veg_mgmt_init     (*p_veg_mgmt_init)
+#define veg_leaf_c        (*p_veg_leaf_c)
+#define veg_inv_assign    (*p_veg_inv_assign)
+#define veg_set_ndemand   (*p_veg_set_ndemand)
+#define veg_site_nneed    (*p_veg_site_nneed)
+#define veg_litter_src    (*p_veg_litter_src)
 
 /* Select the backend: "legacy" (default) or "fates". 0 on success. */
 int prime_veg(const char *which);
@@ -255,6 +289,16 @@ void veg_host_finish(struct command_line_object *);
    only, 2 = zone patches only) and the batched FATES daily step */
 extern int veg_zone_phase;
 void veg_host_daily_batch(struct command_line_object *, struct date);
+
+/* WMFire coupling (-demog 3 + -firespread): FATES fuels of a patch (kgC/m2; returns 0
+   if the patch is not a FATES site) and one fire event per burned patch family */
+struct patch_family_object;
+int  veg_host_fire_fuels(struct patch_object *patch, double *veg, double *litter, double *cwd);
+void veg_host_wmfire_family(struct patch_family_object *fam);
+/* -demog_nneed: plant-priority soil N competition (returns 0 = use resolve_sminn_competition) */
+int  veg_host_sminn_competition(struct patch_object *patch, struct command_line_object *command_line);
+/* diagnostics: FATES litter C to this patch today by source (gC/m2/day); 0 = not a FATES site */
+int  veg_host_litter_src(struct patch_object *patch, double *v);
 
 #endif /* _FORTRAN_SOURCE_ */
 #endif /* _RHESSYS_VEG_H_ */

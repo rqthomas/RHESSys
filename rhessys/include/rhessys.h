@@ -2204,6 +2204,8 @@ struct patch_object
 
         double  burn;                           /* 0-1 % burned */
         double  pspread;                        /* pspread 0-1 */
+        double  wm_frac, wm_fb;                 /* -demog 3 + WMFire: this month's burned fraction of the patch
+                                                   family and sum(burn x cell share) (execute_firespread_event) */
         int 	nburn;				// tally of number of times this patch has burned
 	double  net_plant_psn;                  /* kgC/m2 net carbon flux into patch */
         double  preday_totalc;                  /* kgC/m2 total carbon */
@@ -2436,6 +2438,9 @@ struct  command_line_object
         char            fates_paramfile[FILEPATH_LEN];    /* FATES JSON parameter file (when demog_flag > 0) */
         char            fates_invfile[FILEPATH_LEN];      /* FATES inventory control file (-demog_inv); empty = cold start */
         int             demog_restart;                    /* 1 = start FATES from <world file>.fates (+ .fates_host) (-demog_restart) */
+        char            fates_mgmtfile[FILEPATH_LEN];     /* FATES forest-management driver file (-demog_mgmt); empty = none */
+        int             demog_nneed;                      /* 1 = growth-based FATES plant N demand (-demog_nneed), 0 = RD capacity */
+        int             demog_canopy_frac;                /* 1 = weight FATES canopy quantities by canopy fraction (-demog_canopy_frac) */
         int             routing_flag;
         int             surface_routing_flag;
         int             stream_routing_flag;

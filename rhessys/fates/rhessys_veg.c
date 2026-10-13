@@ -28,6 +28,13 @@ static void legacy_veg_init(const char *pf, size_t *len, const char *inv, size_t
 static void dummy_veg_restart_write(const char *f, size_t *fl) { (void)f; (void)fl; }
 static void dummy_veg_restart_read(const char *f, size_t *fl, struct veg_out *o)
 { (void)f; (void)fl; (void)o; }
+static void dummy_veg_mgmt_init(const char *f, size_t *fl, int *n, int *p, int *z, int *h)
+{ (void)f; (void)fl; (void)n; (void)p; (void)z; (void)h; }
+static void dummy_veg_leaf_c(int *s, double *l) { (void)s; if (l) *l = 0.0; }
+static void dummy_veg_inv_assign(int *n, int *i) { (void)n; (void)i; }
+static void dummy_veg_set_ndemand(int *m) { (void)m; }
+static void dummy_veg_site_nneed(int *s, double *n) { (void)s; if (n) *n = 0.0; }
+static void dummy_veg_litter_src(int *s, double *v) { int k; (void)s; for (k = 0; k < 10; k++) v[k] = 0.0; }
 static void dummy_veg_init_site(int *site, int *patch_id, double *lat, struct veg_bc *bc)
 { (void)site; (void)patch_id; (void)lat; (void)bc; }
 static void dummy_veg_coldstart(struct veg_out *out) { (void)out; }
@@ -53,6 +60,12 @@ veg_clean_t     p_veg_clean     = dummy_veg_clean;
 veg_dump_t      p_veg_dump      = dummy_veg_dump;
 veg_restart_write_t p_veg_restart_write = dummy_veg_restart_write;
 veg_restart_read_t  p_veg_restart_read  = dummy_veg_restart_read;
+veg_mgmt_init_t     p_veg_mgmt_init     = dummy_veg_mgmt_init;
+veg_leaf_c_t        p_veg_leaf_c        = dummy_veg_leaf_c;
+veg_inv_assign_t    p_veg_inv_assign    = dummy_veg_inv_assign;
+veg_set_ndemand_t   p_veg_set_ndemand   = dummy_veg_set_ndemand;
+veg_site_nneed_t    p_veg_site_nneed    = dummy_veg_site_nneed;
+veg_litter_src_t    p_veg_litter_src    = dummy_veg_litter_src;
 
 #ifdef FATES
 /* FATES Fortran BIND(C) entry points (names match rhessys_veg.h _VEG_*).   */
@@ -61,6 +74,12 @@ void rhessys_veg_init(const char *paramfile, size_t *len, const char *invfile,
                       int *nlevdecomp, int *demog_flag, int *nsites, int *is_restart);
 void rhessys_veg_restart_write(const char *f, size_t *fl);
 void rhessys_veg_restart_read(const char *f, size_t *fl, struct veg_out *o);
+void rhessys_veg_mgmt_init(const char *f, size_t *fl, int *n, int *p, int *z, int *h);
+void rhessys_veg_leaf_c(int *s, double *l);
+void rhessys_veg_inv_assign(int *n, int *i);
+void rhessys_veg_set_ndemand(int *m);
+void rhessys_veg_site_nneed(int *s, double *n);
+void rhessys_veg_litter_src(int *s, double *v);
 void rhessys_veg_coldstart(struct veg_out *out_all);
 void rhessys_veg_init_site(int *site, int *patch_id, double *lat, struct veg_bc *bc);
 void rhessys_veg_set_time(struct veg_time *t);
@@ -86,6 +105,12 @@ int prime_veg(const char *which)
         p_veg_dump      = dummy_veg_dump;
         p_veg_restart_write = dummy_veg_restart_write;
         p_veg_restart_read  = dummy_veg_restart_read;
+        p_veg_mgmt_init     = dummy_veg_mgmt_init;
+        p_veg_leaf_c        = dummy_veg_leaf_c;
+        p_veg_inv_assign    = dummy_veg_inv_assign;
+        p_veg_set_ndemand   = dummy_veg_set_ndemand;
+        p_veg_site_nneed    = dummy_veg_site_nneed;
+        p_veg_litter_src    = dummy_veg_litter_src;
         return 0;
     }
 
@@ -102,6 +127,12 @@ int prime_veg(const char *which)
         p_veg_dump      = rhessys_veg_dump_cohorts;
         p_veg_restart_write = rhessys_veg_restart_write;
         p_veg_restart_read  = rhessys_veg_restart_read;
+        p_veg_mgmt_init     = rhessys_veg_mgmt_init;
+        p_veg_leaf_c        = rhessys_veg_leaf_c;
+        p_veg_inv_assign    = rhessys_veg_inv_assign;
+        p_veg_set_ndemand   = rhessys_veg_set_ndemand;
+        p_veg_site_nneed    = rhessys_veg_site_nneed;
+        p_veg_litter_src    = rhessys_veg_litter_src;
         fprintf(stderr, "RHESSys vegetation backend: FATES\n");
         return 0;
 #else

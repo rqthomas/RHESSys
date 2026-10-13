@@ -2062,6 +2062,9 @@ void		patch_daily_F(
 		/* FATES mode 3: plant N demand = FATES RD uptake capacity */
 		if (command_line[0].demog_flag)
 			veg_host_ndemand(patch, command_line);
+		/* -demog_nneed: plant-priority competition (host); otherwise RHESSys's */
+		if (!((command_line[0].demog_flag == 3) && command_line[0].demog_nneed
+		      && veg_host_sminn_competition(patch, command_line)))
                 resolve_sminn_competition(&(patch[0].soil_ns),patch[0].surface_NO3,
                         patch[0].surface_NH4,
                         patch[0].rootzone.depth,
@@ -2071,6 +2074,12 @@ void		patch_daily_F(
 		/* FATES mode 3: the granted plant uptake goes to FATES */
 		if (command_line[0].demog_flag)
 			veg_host_nuptake(patch, command_line);
+	}
+	/* N-competition diagnostic (output only): RHESSYS_NCOMP_DIAG=<patch ID>
+	   writes ncomp_diag.csv (that patch + area-weighted daily means over all patches) */
+	{
+		void ncomp_diag(struct patch_object *, struct date);
+		ncomp_diag(patch, current_date);
 	}
 	/*--------------------------------------------------------------*/
 	/*	Reduce the stratum actual transpiration and compute 	*/
@@ -2849,5 +2858,173 @@ if ( command_line[0].verbose_flag == -5 ){
 	nb_ext_gwDON += patch[0].ndf.DON_to_gw * patch[0].area;
 	if (patch[0].ID >= 0 && patch[0].ID < NB_MAXID) { nb_prev_end[patch[0].ID] = nb_prev; nb_has_end[patch[0].ID] = 1; }
 #endif
+	{
+		void ncomp_eod(struct patch_object *, struct date);
+		ncomp_eod(patch, current_date);
+	}
 	return;
 } /*end patch_daily_F.c*/
+
+/*--------------------------------------------------------------------------*/
+/* ncomp_diag: daily N competition terms (potential immobilization by        */
+/* decomposition transfer, mineralization, plant demand and uptake, litter   */
+/* pools). Enabled only by the environment variable RHESSYS_NCOMP_DIAG       */
+/* (= patch ID to log alone); writes ncomp_diag.csv in the run directory.    */
+/* Output only: no model state is touched.                                   */
+/*--------------------------------------------------------------------------*/
+#define NCD_N 49
+void ncomp_diag(struct patch_object *patch, struct date d)
+{
+	static int init = 0, pid = -1;
+	static FILE *f = NULL;
+	static long ld = -1;
+	static double acc[NCD_N], area = 0.0;
+	static int ly = 0, lm = 0, lday = 0;
+	double v[NCD_N];
+	long day;
+	int k;
+	struct ndayflux_patch_struct *n;
+	if (!init) {
+		char *e = getenv("RHESSYS_NCOMP_DIAG");
+		init = 1;
+		if (e == NULL) return;
+		pid = atoi(e);
+		f = fopen("ncomp_diag.csv", "w");
+		if (f == NULL) return;
+		fprintf(f, "year,month,day,scope,potential_immob,imm_l1s1,imm_l2s2,imm_l3l2,imm_l4s3,imm_s1s2,imm_s2s3,"
+			"imm_s3s4,imm_l1s1_bg,imm_l2s2_bg,imm_l3l2_bg,imm_l4s3_bg,mineralized,plant_demand,plant_uptake,"
+			"fract_immob,litr1c,litr2c,litr3c,litr4c,litr_bg_c,cn_litr34,"
+			"in_leaf,in_froot,in_cwd,in_mort_leaf,in_mort_froot,"
+			"fates_leaf,fates_seed,fates_agcwd,fates_froot,fates_bgcwd,"
+			"out_decomp_sur,out_decomp_bg,pot_decomp_sur,pot_decomp_bg,w_scalar,t_scalar,litr_sur_c,"
+			"inN_leaf,inN_froot,inN_cwd,fatesN_leaf,fatesN_seed,fatesN_agcwd,fatesN_froot,fatesN_bgcwd,"
+			"litr_sur_n,litr_bg_n\n");
+	}
+	if (f == NULL) return;
+	n = &(patch[0].ndf);
+	v[0] = n->potential_immob;
+	v[1] = max(n->pmnf_l1s1, 0.0); v[2] = max(n->pmnf_l2s2, 0.0); v[3] = max(n->pmnf_l3l2, 0.0);
+	v[4] = max(n->pmnf_l4s3, 0.0); v[5] = max(n->pmnf_s1s2, 0.0); v[6] = max(n->pmnf_s2s3, 0.0);
+	v[7] = max(n->pmnf_s3s4, 0.0);
+	v[8] = max(n->pmnf_l1s1_bg, 0.0); v[9] = max(n->pmnf_l2s2_bg, 0.0); v[10] = max(n->pmnf_l3l2_bg, 0.0);
+	v[11] = max(n->pmnf_l4s3_bg, 0.0);
+	v[12] = n->mineralized; v[13] = n->plant_potential_ndemand; v[14] = n->plant_avail_uptake;
+	v[15] = patch[0].soil_ns.fract_potential_immob;
+	v[16] = patch[0].litter_cs.litr1c; v[17] = patch[0].litter_cs.litr2c;
+	v[18] = patch[0].litter_cs.litr3c; v[19] = patch[0].litter_cs.litr4c;
+	v[20] = patch[0].litter_cs.litr1c_bg + patch[0].litter_cs.litr2c_bg + patch[0].litter_cs.litr3c_bg
+		+ patch[0].litter_cs.litr4c_bg;
+	v[21] = (patch[0].litter_ns.litr3n + patch[0].litter_ns.litr4n > 0.0) ?
+		(v[18] + v[19]) / (patch[0].litter_ns.litr3n + patch[0].litter_ns.litr4n) : 0.0;
+	{
+		struct cdayflux_patch_struct *c = &(patch[0].cdf);
+		double src[10];
+		v[22] = c->leafc_to_litr1c + c->leafc_to_litr2c + c->leafc_to_litr3c + c->leafc_to_litr4c;
+		v[23] = c->frootc_to_litr1c_bg + c->frootc_to_litr2c_bg + c->frootc_to_litr3c_bg + c->frootc_to_litr4c_bg;
+		v[24] = c->cwdc_to_litr2c + c->cwdc_to_litr3c + c->cwdc_to_litr4c
+			+ c->cwdc_to_litr2c_bg + c->cwdc_to_litr3c_bg + c->cwdc_to_litr4c_bg;
+		v[25] = c->m_leafc_to_litr1c + c->m_leafc_to_litr2c + c->m_leafc_to_litr3c + c->m_leafc_to_litr4c;
+		v[26] = c->m_frootc_to_litr1c_bg + c->m_frootc_to_litr2c_bg + c->m_frootc_to_litr3c_bg + c->m_frootc_to_litr4c_bg;
+		veg_host_litter_src(patch, src);			/* gC/m2/day -> kg */
+		for (k = 0; k < 5; k++) v[27 + k] = src[k] / 1000.0;
+		v[32] = c->litr1c_to_soil1c + c->litr2c_to_soil2c + c->litr4c_to_soil3c
+			+ c->litr1c_hr + c->litr2c_hr + c->litr3c_hr + c->litr4c_hr
+			+ c->do_litr1c_loss + c->do_litr2c_loss + c->do_litr3c_loss + c->do_litr4c_loss;
+		v[33] = c->litr1c_to_soil1c_bg + c->litr2c_to_soil2c_bg + c->litr4c_to_soil3c_bg
+			+ c->litr1c_hr_bg + c->litr2c_hr_bg + c->litr3c_hr_bg + c->litr4c_hr_bg
+			+ c->do_litr1c_loss_bg + c->do_litr2c_loss_bg + c->do_litr3c_loss_bg + c->do_litr4c_loss_bg;
+		v[34] = c->plitr1c_loss + c->plitr2c_loss + c->plitr3c_loss + c->plitr4c_loss;
+		v[35] = c->plitr1c_loss_bg + c->plitr2c_loss_bg + c->plitr3c_loss_bg + c->plitr4c_loss_bg;
+		v[36] = c->decomp_w_scalar; v[37] = c->decomp_t_scalar;
+		v[38] = v[16] + v[17] + v[18] + v[19];
+		{
+			struct ndayflux_patch_struct *nn = &(patch[0].ndf);
+			v[39] = nn->leafn_to_litr1n + nn->leafn_to_litr2n + nn->leafn_to_litr3n + nn->leafn_to_litr4n
+				+ nn->m_leafn_to_litr1n + nn->m_leafn_to_litr2n + nn->m_leafn_to_litr3n + nn->m_leafn_to_litr4n;
+			v[40] = nn->frootn_to_litr1n_bg + nn->frootn_to_litr2n_bg + nn->frootn_to_litr3n_bg + nn->frootn_to_litr4n_bg
+				+ nn->m_frootn_to_litr1n_bg + nn->m_frootn_to_litr2n_bg + nn->m_frootn_to_litr3n_bg + nn->m_frootn_to_litr4n_bg;
+			v[41] = nn->cwdn_to_litr2n + nn->cwdn_to_litr3n + nn->cwdn_to_litr4n
+				+ nn->cwdn_to_litr2n_bg + nn->cwdn_to_litr3n_bg + nn->cwdn_to_litr4n_bg;
+		}
+		for (k = 0; k < 5; k++) v[42 + k] = src[5 + k] / 1000.0;
+		v[47] = patch[0].litter_ns.litr1n + patch[0].litter_ns.litr2n + patch[0].litter_ns.litr3n + patch[0].litter_ns.litr4n;
+		v[48] = patch[0].litter_ns.litr1n_bg + patch[0].litter_ns.litr2n_bg + patch[0].litter_ns.litr3n_bg + patch[0].litter_ns.litr4n_bg;
+	}
+	day = d.year * 10000 + d.month * 100 + d.day;
+	if ((ld >= 0) && (day != ld) && (area > 0.0)) {		/* flush yesterday's basin mean */
+		fprintf(f, "%d,%d,%d,basin_mean", ly, lm, lday);
+		for (k = 0; k < NCD_N; k++) fprintf(f, ",%.6e", acc[k] / area);
+		fprintf(f, "\n");
+		for (k = 0; k < NCD_N; k++) acc[k] = 0.0;
+		area = 0.0;
+	}
+	ld = day; ly = (int) d.year; lm = (int) d.month; lday = (int) d.day;
+	if (patch[0].ID == pid) {
+		fprintf(f, "%d,%d,%d,patch%d", ly, lm, lday, pid);
+		for (k = 0; k < NCD_N; k++) fprintf(f, ",%.6e", v[k]);
+		fprintf(f, "\n");
+	}
+	if (patch[0].canopy_strata != NULL && patch[0].num_canopy_strata > 0 &&
+	    patch[0].canopy_strata[0][0].defaults[0][0].epc.veg_type != NON_VEG) {
+		for (k = 0; k < NCD_N; k++) acc[k] += patch[0].area * v[k];
+		area += patch[0].area;
+	}
+}
+
+/*--------------------------------------------------------------------------*/
+/* ncomp_eod: end-of-day N loss terms (RHESSYS_NCOMP_DIAG=<patch ID>):      */
+/* denitrification and its drivers (update_denitrif: soil-pool heterotrophic */
+/* respiration, nitrate, root-zone saturation), nitrification, leaching,    */
+/* litter + soil respiration. Writes ncomp_eod.csv; output only.             */
+/*--------------------------------------------------------------------------*/
+#define NCE_N 12
+void ncomp_eod(struct patch_object *patch, struct date d)
+{
+	static int init = 0, pid = -1;
+	static FILE *f = NULL;
+	static long ld = -1;
+	static double acc[NCE_N], area = 0.0;
+	static int ly = 0, lm = 0, lday = 0;
+	double v[NCE_N];
+	long day;
+	int k;
+	struct cdayflux_patch_struct *c = &(patch[0].cdf);
+	if (!init) {
+		char *e = getenv("RHESSYS_NCOMP_DIAG");
+		init = 1;
+		if (e == NULL) return;
+		pid = atoi(e);
+		f = fopen("ncomp_eod.csv", "w");
+		if (f == NULL) return;
+		fprintf(f, "year,month,day,scope,denitrif,nitrif,nitrate,sminn,rz_S,theta_std,soil_hr,litter_hr,"
+			"N_to_gw,mineralized_net,plant_uptake,Tsoil\n");
+	}
+	if (f == NULL) return;
+	v[0] = patch[0].ndf.denitrif; v[1] = patch[0].ndf.sminn_to_nitrate;
+	v[2] = patch[0].soil_ns.nitrate; v[3] = patch[0].soil_ns.sminn;
+	v[4] = patch[0].rootzone.S; v[5] = patch[0].theta_std;
+	v[6] = c->soil1c_hr + c->soil2c_hr + c->soil3c_hr + c->soil4c_hr;
+	v[7] = c->litr1c_hr + c->litr2c_hr + c->litr3c_hr + c->litr4c_hr
+		+ c->litr1c_hr_bg + c->litr2c_hr_bg + c->litr3c_hr_bg + c->litr4c_hr_bg;
+	v[8] = patch[0].ndf.N_to_gw; v[9] = patch[0].ndf.net_mineralized + patch[0].ndf.net_mineralized_bg;
+	v[10] = patch[0].ndf.sminn_to_npool; v[11] = patch[0].Tsoil;
+	day = d.year * 10000 + d.month * 100 + d.day;
+	if ((ld >= 0) && (day != ld) && (area > 0.0)) {
+		fprintf(f, "%d,%d,%d,basin_mean", ly, lm, lday);
+		for (k = 0; k < NCE_N; k++) fprintf(f, ",%.6e", acc[k] / area);
+		fprintf(f, "\n");
+		for (k = 0; k < NCE_N; k++) acc[k] = 0.0;
+		area = 0.0;
+	}
+	ld = day; ly = (int) d.year; lm = (int) d.month; lday = (int) d.day;
+	if (patch[0].ID == pid) {
+		fprintf(f, "%d,%d,%d,patch%d", ly, lm, lday, pid);
+		for (k = 0; k < NCE_N; k++) fprintf(f, ",%.6e", v[k]);
+		fprintf(f, "\n");
+	}
+	if (patch[0].canopy_strata != NULL && patch[0].num_canopy_strata > 0 &&
+	    patch[0].canopy_strata[0][0].defaults[0][0].epc.veg_type != NON_VEG) {
+		for (k = 0; k < NCE_N; k++) acc[k] += patch[0].area * v[k];
+		area += patch[0].area;
+	}
+}

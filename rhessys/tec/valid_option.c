@@ -91,6 +91,9 @@ int	 valid_option( char *command_line){
 		(strcmp(command_line,"-demog") == 0) ||
 		(strcmp(command_line,"-demog_inv") == 0) ||
 		(strcmp(command_line,"-demog_restart") == 0) ||
+		(strcmp(command_line,"-demog_mgmt") == 0) ||
+		(strcmp(command_line,"-demog_nneed") == 0) ||
+		(strcmp(command_line,"-demog_canopy_frac") == 0) ||
 		(strcmp(command_line,"-redefn") == 0) ||
 		(strcmp(command_line,"-template") == 0) ||
 		(strcmp(command_line,"-msr") == 0))
