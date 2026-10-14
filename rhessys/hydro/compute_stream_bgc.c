@@ -40,8 +40,9 @@
 /*	through, kN = vf_N fT A_bed/V), otherwise			*/
 /*	the decomposition rate is scaled (N_limit) and the DOC/DON	*/
 /*	stores recomputed, so unused DOM flows on.			*/
-/*	fT = theta^(Tstream - 20), Tstream =			*/
-/*	max(2.99 + 0.72 Tair, 0).					*/
+/*	fT = theta^(Tstream - 20); Tstream is the reach water	*/
+/*	temperature from the caller (-strtemp T_mean, else	*/
+/*	max(2.99 + 0.72 Tair, 0)).				*/
 /*								*/
 /*--------------------------------------------------------------*/
 #include <stdio.h>
@@ -104,18 +105,16 @@ void compute_stream_bgc(struct stream_network_object *reach,
 			double NO3, double NH4, double DON, double DOC,   /* water-column inputs (upstream + lateral), kg/day */
 			double POC_in, double PON_in,                    /* suspended POC/PON inputs (upstream + eroded sediment) */
 			double lat_POC, double lat_PON,                  /* leaf litter into the channel (to the streambed) */
-			double Q, double V, double T_air,                /* outflow m3/day, water volume m3, air temperature C */
+			double Q, double V, double Tstream,              /* outflow m3/day, water volume m3, water temperature C */
 			struct stream_bgc_defaults *p)
 {
-	double Tstream, fT, A_bed, r, kdep, kdec, kden, kN, fN;
+	double fT, A_bed, r, kdep, kdec, kden, kN, fN;
 	double fragC, fragN, fexp, entC, entN, rr;
 	double outNO3, outNH4, outDON, outDOC, outPOC, outPON;
 	double depC, depN, decC, decN, den, dummy;
 	double netN, need, supply, nlim, immob, bioC, bioN, M0DOC, M0DON;
 	double brkC, brkN, micC, micN, supply_tot, netNb, needb, availb, fb;
 
-	Tstream = T_air * 0.72 + 2.99;
-	if (Tstream < 0.0) Tstream = 0.0;
 	fT = pow(p->theta, Tstream - 20.0);
 	A_bed = reach->bottom_width * reach->length;
 	reach->V_water = V;

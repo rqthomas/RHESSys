@@ -60,6 +60,11 @@ void	output_stream_routing(
 	/*	Last (always): POC_out PON_out lateral_POC lateral_PON	*/
 	/*	         lateral_POC_labile lateral_PON_labile (kg/day):	*/
 	/*	         leaf litter from stream-side patches		*/
+	/*	With -strbgc: in-stream processing columns.		*/
+	/*	With -strtemp: T_mean T_end T_lat T_up T_gw T_sub (C;	*/
+	/*	         -9999 = no flow), shade (0-1), pai_rip (m2/m2),	*/
+	/*	         H_sw H_lw H_evap H_sens H_bed H_ice (kJ/m2/day),	*/
+	/*	         Q_lat_gw Q_lat_sub Q_lat_ret (m3/day)		*/
 	/*--------------------------------------------------------------*/
 
 	if (command_line[0].grow_flag > 0) {
@@ -118,6 +123,16 @@ void	output_stream_routing(
 			stream_network[0].wc_NO3, stream_network[0].wc_NH4, stream_network[0].wc_POC, stream_network[0].wc_PON,
 			stream_network[0].Bed_mic_C, stream_network[0].Bed_N_mineral,
 			stream_network[0].Bed_N_immob, stream_network[0].Bed_N_limit);
+	/* stream temperature (-strtemp): C, 0-1, m2/m2, kJ/m2/day, m3/day */
+	if (command_line[0].stream_temp_flag == 1)
+		fprintf(outfile, " %f %f %f %f %f %f %f %f %f %f %f %f %f %f %e %e %e",
+			stream_network[0].T_mean, stream_network[0].T_water,
+			stream_network[0].T_lat, stream_network[0].T_up,
+			stream_network[0].T_gw, stream_network[0].T_sub,
+			stream_network[0].shade, stream_network[0].pai_rip,
+			stream_network[0].H_sw, stream_network[0].H_lw, stream_network[0].H_evap,
+			stream_network[0].H_sens, stream_network[0].H_bed, stream_network[0].H_ice,
+			stream_network[0].Q_lat_gw, stream_network[0].Q_lat_sub, stream_network[0].Q_lat_ret);
 	fprintf(outfile, "\n");
 	return;
 } /*end output_stream_routing*/

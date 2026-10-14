@@ -58,6 +58,7 @@ int	 valid_option( char *command_line){
 		(strcmp(command_line,"-sv")  == 0) ||
 		(strcmp(command_line,"-st")  == 0) ||
 		(strcmp(command_line,"-strbgc")  == 0) ||
+		(strcmp(command_line,"-strtemp")  == 0) ||
 		(strcmp(command_line,"-str")  == 0) ||
 		(strcmp(command_line,"-spinmode")  == 0) ||
 		(strcmp(command_line,"-th")  == 0) ||

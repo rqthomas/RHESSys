@@ -166,6 +166,26 @@ struct stream_list_object construct_stream_routing_topology(
 		stream_network_ini[i].stream_CO2=0.0; stream_network_ini[i].stream_denitrif=0.0;
 		stream_network_ini[i].Bed_mic_C=0.0; stream_network_ini[i].Bed_N_mineral=0.0;
 		stream_network_ini[i].Bed_N_immob=0.0; stream_network_ini[i].Bed_N_limit=1.0;
+		/* stream temperature (-strtemp): cold start, overwritten from the state file */
+		{
+			struct stream_temp_defaults *tp = command_line[0].stream_temp;
+			stream_network_ini[i].T_water = (tp != NULL) ? tp->T_init : 0.0;
+			stream_network_ini[i].T_sub_mem = (tp != NULL) ? tp->T_init : 0.0;
+			stream_network_ini[i].T_gw_mem = (tp != NULL) ? tp->T_gw_init : 0.0;
+			stream_network_ini[i].T_mean = stream_network_ini[i].T_water;
+			stream_network_ini[i].T_gw = stream_network_ini[i].T_sub = 0.0;
+			stream_network_ini[i].heat_in = 0.0;
+			stream_network_ini[i].T_lat = stream_network_ini[i].T_up = -9999.0;
+			stream_network_ini[i].Q_lat_gw = stream_network_ini[i].Q_lat_sub = stream_network_ini[i].Q_lat_ret = 0.0;
+			stream_network_ini[i].shade = stream_network_ini[i].pai_rip = 0.0;
+			stream_network_ini[i].H_sw = stream_network_ini[i].H_lw = stream_network_ini[i].H_evap = 0.0;
+			stream_network_ini[i].H_sens = stream_network_ini[i].H_bed = stream_network_ini[i].H_ice = 0.0;
+			stream_network_ini[i].S_topo = 0.0;
+			stream_network_ini[i].shade_override = -1.0;
+			stream_network_ini[i].c_oh = (tp != NULL) ? tp->c_overhang : 1.0;
+			stream_network_ini[i].temp_is_lake = 0;
+			stream_network_ini[i].temp_zone = NULL;
+		}
 		/* bankfull discharge (m3/day): Manning on the trapezoid of the stream table */
 		{
 			double tw = stream_network_ini[i].top_width, bw = stream_network_ini[i].bottom_width;
@@ -326,8 +346,42 @@ struct stream_list_object construct_stream_routing_topology(
         /*   code to construct stream_list                              */
         /*--------------------------------------------------------------*/
 		
+        /*--------------------------------------------------------------*/
+        /*   stream temperature: per-reach shading, lake reaches, and   */
+        /*   the zone used for met when a reach has no lateral patches  */
+        /*--------------------------------------------------------------*/
+        if (command_line[0].stream_temp_flag == 1) {
+		int stream_temp_is_lake(int, struct stream_temp_defaults *);
+		struct stream_temp_defaults *tp = command_line[0].stream_temp;
+		int matched = 0;
+		for (i = 0; i < num_reaches; i++) {
+			struct stream_network_object *r = &(stream_network[i]);
+			r->temp_is_lake = stream_temp_is_lake(r->reach_ID, tp);
+			for (j = 0; j < tp->num_reach_params; j++)
+				if (tp->rp_ID[j] == r->reach_ID) {
+					r->S_topo = tp->rp_S_topo[j];
+					r->shade_override = tp->rp_shade[j];
+					if (tp->rp_c_oh[j] >= 0.0) r->c_oh = tp->rp_c_oh[j];
+					matched++;
+					break;
+				}
+			r->temp_zone = NULL;
+			for (j = 0; (j < r->num_lateral_inputs) && (r->temp_zone == NULL); j++)
+				if (r->lateral_inputs[j] != NULL) r->temp_zone = r->lateral_inputs[j][0].zone;
+			if ((r->temp_zone == NULL) && (r->num_neighbour_hills > 0) && (r->neighbour_hill[0] != NULL)
+				&& (r->neighbour_hill[0][0].num_zones > 0))
+				r->temp_zone = r->neighbour_hill[0][0].zones[0];
+			if (r->temp_zone == NULL)
+				r->temp_zone = basin[0].hillslopes[0][0].zones[0];
+		}
+		if (matched < tp->num_reach_params)
+			fprintf(stderr, "WARNING: %d stream_temp_reach_file entries match no reach\n",
+				tp->num_reach_params - matched);
+	}
+
         stream_list.stream_network = stream_network;
         stream_list.bgc_flag = command_line[0].stream_bgc_flag;
+        stream_list.temp_flag = command_line[0].stream_temp_flag;
         return(stream_list);
 		
 	} /*end construct_stream_routing_topology.c*/	

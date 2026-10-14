@@ -116,15 +116,52 @@ void	read_stream_routing_state(
 		}
 	}
 	/*--------------------------------------------------------------*/
-	/*	in-stream processing stores (-strbgc); optional, one block	*/
-	/*	per basin after the routing block							*/
+	/*	optional blocks after the routing block, one per basin and	*/
+	/*	in any order: in-stream processing stores (-strbgc,		*/
+	/*	stream_benthic_state) and stream temperature (-strtemp,		*/
+	/*	stream_temperature_state)					*/
 	/*--------------------------------------------------------------*/
 	{
-		int found = 0;
+		int found = 0, found_t = 0, nt;
+		double Tw, Tg, Ts;
 		double bPOC, bPON, wc[6];
 		char line[1024];
 		int nwc;
 		while (fscanf(world_file, "%s", token) == 1) {
+			if (strcmp(token, "stream_temperature_state") == 0) {
+				/* reach_ID T_water T_gw_mem T_sub_mem */
+				if ((fscanf(world_file, "%d", &basin_ID) != 1)) break;
+				read_record(world_file, record);
+				if (fscanf(world_file, "%d", &num_reaches) != 1) break;
+				read_record(world_file, record);
+				stream_list = NULL;
+				for (b=0; b < world[0].num_basin_files; b++)
+					if (world[0].basins[b][0].ID == basin_ID) stream_list = &(world[0].basins[b][0].stream_list);
+				nt = 0;
+				for (i=0; i < num_reaches; i++) {
+					if (fscanf(world_file, "%d %lf %lf %lf", &reach_ID, &Tw, &Tg, &Ts) != 4) {
+						fprintf(stderr, "FATAL ERROR: in read_stream_routing_state, bad stream_temperature_state record %d\n", i);
+						exit(EXIT_FAILURE);
+					}
+					if ((stream_list == NULL) || (stream_list->stream_network == NULL) || (stream_list->temp_flag != 1)) continue;
+					for (k=0; k < stream_list->num_reaches; k++)
+						if (stream_list->stream_network[k].reach_ID == reach_ID) {
+							stream_list->stream_network[k].T_water = Tw;
+							stream_list->stream_network[k].T_mean = Tw;
+							stream_list->stream_network[k].T_gw_mem = Tg;
+							stream_list->stream_network[k].T_sub_mem = Ts;
+							nt++;
+							break;
+						}
+				}
+				if ((stream_list != NULL) && (stream_list->temp_flag == 1)) {
+					found_t++;
+					if (nt != stream_list->num_reaches)
+						fprintf(stderr, "WARNING: stream_temperature_state restored %d of %d reaches; the rest start at stream_T_init\n",
+							nt, stream_list->num_reaches);
+				}
+				continue;
+			}
 			if (strcmp(token, "stream_benthic_state") != 0) continue;
 			found++;
 			if ((fscanf(world_file, "%d", &basin_ID) != 1)) break;
@@ -168,6 +205,10 @@ void	read_stream_routing_state(
 			if ((world[0].basins[b][0].stream_list.bgc_flag == 1) && (found == 0))
 				fprintf(stderr, "WARNING: no stream_benthic_state in worldfile; streambed stores start empty\n");
 		if (found > 0) printf("\nStreambed (benthic) stores restored for %d basin(s)\n", found);
+		for (b=0; b < world[0].num_basin_files; b++)
+			if ((world[0].basins[b][0].stream_list.temp_flag == 1) && (found_t == 0))
+				fprintf(stderr, "WARNING: no stream_temperature_state in worldfile; stream temperatures start at stream_T_init\n");
+		if (found_t > 0) printf("\nStream temperature state restored for %d basin(s)\n", found_t);
 	}
 	return;
 } /*end read_stream_routing_state*/

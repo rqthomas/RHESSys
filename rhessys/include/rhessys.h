@@ -559,12 +559,26 @@ double Bed_N_limit;                       /* 0-1 - share of their potential brea
 double wc_NO3, wc_NH4, wc_DON, wc_DOC;     /* kg - water-column stores (well-mixed reach water; state) */
 double wc_POC, wc_PON;                     /* kg - suspended POC/PON in the reach water (state) */
 double V_water;                            /* m3 - reach water volume (alfa Q^0.6 x length) */
+/* stream temperature (-strtemp; compute_stream_temperature.c) */
+double T_water;                            /* C - reach water temperature at the end of the day (state) */
+double T_gw_mem, T_sub_mem;                /* C - running means of air temperature for groundwater / soil water (state) */
+double heat_in;                            /* m3/day x C - advected heat from upstream reaches (inbox) */
+double T_mean;                             /* C - daily mean water (outflow) temperature */
+double T_lat, T_up;                        /* C - flow-weighted lateral input / upstream inflow temperature */
+double T_gw, T_sub;                        /* C - groundwater / soil water source temperatures used today */
+double Q_lat_gw, Q_lat_sub, Q_lat_ret;     /* m3/day - lateral inflow by pathway: hillslope gw, patch subsurface, return flow */
+double shade, pai_rip;                     /* 0-1 shortwave shade; riparian plant area index (m2/m2) */
+double H_sw, H_lw, H_evap, H_sens, H_bed, H_ice; /* kJ/m2/day - surface heat fluxes (+ = into the water) */
+double S_topo, shade_override, c_oh;       /* per-reach shading parameters (-strtemp reach file) */
+int temp_is_lake;                          /* 1 = reach inside a lake/reservoir: mixing only */
+struct zone_object *temp_zone;             /* zone for met when a reach has no lateral patches */
 };
 
 struct stream_list_object
         {
         int num_reaches;
         int bgc_flag;                   /* 1 = in-stream processing on (-strbgc) */
+        int temp_flag;                  /* 1 = stream temperature on (-strtemp) */
         double streamflow;
         struct stream_network_object *stream_network;
         };
@@ -586,6 +600,45 @@ struct stream_bgc_defaults
         double f_mic;      /* (DIM) - share of streambed breakdown done by attached microbes (rest -> DOC/DON) */
         int num_lake_reaches;  /* reaches inside a lake/reservoir: no in-stream processing (pass-through) */
         int *lake_reaches;     /* their reach IDs (stream_bgc_lake_reaches <file> in the -strbgc file) */
+        };
+/*----------------------------------------------------------*/
+/*      Stream temperature parameters (-strtemp <file>)     */
+/*----------------------------------------------------------*/
+struct stream_temp_defaults
+        {
+        double albedo_w;       /* (DIM) water shortwave albedo */
+        double emiss_w;        /* (DIM) water longwave emissivity */
+        double emiss_veg;      /* (DIM) canopy longwave emissivity */
+        double k_shade;        /* (DIM) extinction coefficient for shading; < 0 = strata ext_coef */
+        double SAI;            /* m2/m2 - plant area added to the strata proj_pai */
+        double c_overhang;     /* (DIM) canopy overhang: shaded width share = min(1, c H / w) */
+        double c_wind_shelter; /* (DIM) wind reduction U (1 - c S_v) */
+        double wind_fn_mult;   /* (DIM) multiplier on the evaporation wind function */
+        double k_bed;          /* kJ/m2/day/K - bed heat exchange toward the groundwater temperature */
+        double tau_gw;         /* days - groundwater running-mean time constant */
+        double dT_gw;          /* C - groundwater offset from its running mean */
+        double T_gw_const;     /* C - fixed groundwater temperature (-999 = use the running mean) */
+        double tau_sub;        /* days - soil (subsurface) water running-mean time constant */
+        double T_init;         /* C - cold-start water and soil water temperature */
+        double T_gw_init;      /* C - cold-start groundwater running mean */
+        double V_min;          /* m3 - below this reach volume T is the steady-state value */
+        int snow_insulate;     /* 1 = running means are driven by 0 C under snow */
+        int exchange;          /* 0 = mixing only (no surface or bed exchange; for testing) */
+        int num_lake_reaches;  /* reaches inside a lake/reservoir: mixing only */
+        int *lake_reaches;
+        int num_reach_params;  /* per-reach table (stream_temp_reach_file) */
+        int *rp_ID;
+        double *rp_S_topo, *rp_shade, *rp_c_oh;
+        };
+/* daily inputs to compute_stream_temperature for one reach */
+struct stream_temp_input
+        {
+        double Q_up, heat_up;            /* m3/day; m3/day x C */
+        double Q_gw, Q_sub;              /* m3/day */
+        double Q_ret_event, heat_ret_event, Q_ret_soil; /* m3/day; m3/day x C; m3/day */
+        double tavg, tdew, Kdown, Ldown, wind, z, snow_frac; /* met: C, C, kJ/m2/day, kJ/m2/day, m/s, m, 0-1 */
+        double pai, k_ext, h_can;        /* riparian plant area index, extinction coefficient, canopy height (m) */
+        double V, A_x, tangent;          /* m3; m2 cross-section; side slope */
         };
 /*----------------------------------------------------------*/
 /*      Define target object                                */
@@ -2445,6 +2498,7 @@ struct  command_line_object
         int             surface_routing_flag;
         int             stream_routing_flag;
         int             stream_bgc_flag;       /* -strbgc <file>: in-stream storage and processing */
+        int             stream_temp_flag;      /* -strtemp <file>: stream temperature */
         int             spinmode_flag;         /* -spinmode <ndep_mult> <years>: accelerated spin-up period */
         int             spin_active;           /* 1 while the spin-up period lasts (set daily in execute_tec) */
         double          spin_ndep_mult;        /* N deposition multiplier during the spin-up period */
@@ -2491,6 +2545,8 @@ struct  command_line_object
         char    stream_routing_filename[FILEPATH_LEN];
         char    stream_bgc_filename[FILEPATH_LEN];
         struct stream_bgc_defaults *stream_bgc;
+        char    stream_temp_filename[FILEPATH_LEN];
+        struct stream_temp_defaults *stream_temp;
         char    reservoir_operation_filename[FILEPATH_LEN];
         char    world_filename[FILEPATH_LEN];
         char    redefine_filename[FILEPATH_LEN];

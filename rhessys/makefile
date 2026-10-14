@@ -200,6 +200,8 @@ $(OBJ)/compute_subsurface_routing_hourly.o \
 $(OBJ)/compute_stream_routing.o \
 $(OBJ)/compute_stream_bgc.o \
 $(OBJ)/construct_stream_bgc_defaults.o \
+$(OBJ)/compute_stream_temperature.o \
+$(OBJ)/construct_stream_temp_defaults.o \
 $(OBJ)/compute_surface_heat_flux.o \
 $(OBJ)/compute_subsurface_temperature_profile.o \
 $(OBJ)/compute_toc_wind.o \
@@ -943,6 +945,10 @@ $(OBJ)/compute_stream_bgc.o: hydro/compute_stream_bgc.c
 	$(CC) -c $(CFLAGS) -I include hydro/compute_stream_bgc.c -o $(OBJ)/compute_stream_bgc.o
 $(OBJ)/construct_stream_bgc_defaults.o: init/construct_stream_bgc_defaults.c
 	$(CC) -c $(CFLAGS) -I include init/construct_stream_bgc_defaults.c -o $(OBJ)/construct_stream_bgc_defaults.o
+$(OBJ)/construct_stream_temp_defaults.o: init/construct_stream_temp_defaults.c
+	$(CC) -c $(CFLAGS) -I include init/construct_stream_temp_defaults.c -o $(OBJ)/construct_stream_temp_defaults.o
+$(OBJ)/compute_stream_temperature.o: hydro/compute_stream_temperature.c
+	$(CC) -c $(CFLAGS) -I include hydro/compute_stream_temperature.c -o $(OBJ)/compute_stream_temperature.o
 $(OBJ)/compute_subsurface_routing.o: hydro/compute_subsurface_routing.c
 	$(CC) -c $(CFLAGS) -I include hydro/compute_subsurface_routing.c -o $(OBJ)/compute_subsurface_routing.o
 $(OBJ)/compute_subsurface_routing_hourly.o: hydro/compute_subsurface_routing_hourly.c

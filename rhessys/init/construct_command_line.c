@@ -40,6 +40,7 @@
 #include <string.h>
 #include "rhessys.h"
 struct stream_bgc_defaults *construct_stream_bgc_defaults(char *);
+struct stream_temp_defaults *construct_stream_temp_defaults(char *);
 struct	command_line_object	*construct_command_line(
 													int main_argc,
 													char **main_argv)
@@ -80,6 +81,8 @@ struct	command_line_object	*construct_command_line(
 	command_line[0].stream_routing_flag = 0;
 	command_line[0].stream_bgc_flag = 0;
 	command_line[0].stream_bgc = NULL;
+	command_line[0].stream_temp_flag = 0;
+	command_line[0].stream_temp = NULL;
 	command_line[0].spinmode_flag = 0;
 	command_line[0].spin_active = 0;
 	command_line[0].spin_ndep_mult = 1.0;
@@ -825,6 +828,21 @@ printf("%s ",command_line[0].WUI_filename);
 			}
 
 			/*--------------------------------------------------------------*/
+			/*	-strtemp <file>: stream temperature parameters		*/
+			/*--------------------------------------------------------------*/
+			else if ( strcmp(main_argv[i],"-strtemp") == 0 ){
+				i++;
+				if ((i == main_argc) || (valid_option(main_argv[i])==1) ){
+					fprintf(stderr,"FATAL ERROR: -strtemp parameter file name not specified\n");
+					exit(EXIT_FAILURE);
+				}
+				command_line[0].stream_temp_flag = 1;
+				strcpy(command_line[0].stream_temp_filename, main_argv[i]);
+				command_line[0].stream_temp = construct_stream_temp_defaults(main_argv[i]);
+				i++;
+			}
+
+			/*--------------------------------------------------------------*/
 			/*	-spinmode <ndep_mult> <years>: for the first <years> years	*/
 			/*	of the run N deposition is multiplied by <ndep_mult> and	*/
 			/*	erosion detachment is off (accelerated spin-up)			*/
@@ -1459,6 +1477,10 @@ printf("%s ",command_line[0].WUI_filename);
 	if ((command_line[0].stream_bgc_flag == 1) &&
 		((command_line[0].stream_routing_flag != 1) || (command_line[0].grow_flag <= 0))) {
 		fprintf(stderr, "FATAL ERROR: -strbgc needs stream routing (-str) and growth mode (-g)\n");
+		exit(EXIT_FAILURE);
+	}
+	if ((command_line[0].stream_temp_flag == 1) && (command_line[0].stream_routing_flag != 1)) {
+		fprintf(stderr, "FATAL ERROR: -strtemp needs stream routing (-str)\n");
 		exit(EXIT_FAILURE);
 	}
 

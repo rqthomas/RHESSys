@@ -53,7 +53,10 @@ double  compute_stream_routing(struct command_line_object *command_line,
 	void compute_stream_bgc(struct stream_network_object *, double, double, double, double,
 		double, double, double, double, double, double, double, struct stream_bgc_defaults *);
 	int stream_bgc_is_lake(int, struct stream_bgc_defaults *);
+	void compute_stream_temperature(struct stream_network_object *, struct stream_temp_input *,
+		struct stream_temp_defaults *);
 	int bgc_here;
+	double T_bgc;
 	/*--------------------------------------------------------------*/
 	/*	Local function definition.				*/
 	/*--------------------------------------------------------------*/
@@ -90,6 +93,12 @@ double  compute_stream_routing(struct command_line_object *command_line,
 	double lateral_sediment;
 	double lateral_POC, lateral_PON, lateral_POC_labile, lateral_PON_labile;
 	double lateral_POC_sed, lateral_PON_sed;
+	/* stream temperature (-strtemp): lateral flows by pathway, met and riparian canopy */
+	struct stream_temp_input tin;
+	double t_area, t_cov, t_h, t_k, a, vol, R, Pin, Rev, T_rain, T_P, rain, melt;
+	struct zone_object *zone;
+	struct canopy_strata_object *strata;
+	int s;
 	
 
 	struct patch_object *patch;
@@ -113,6 +122,12 @@ double  compute_stream_routing(struct command_line_object *command_line,
 		lateral_sediment = 0.0;
 		lateral_POC = 0.0; lateral_PON = 0.0; lateral_POC_labile = 0.0; lateral_PON_labile = 0.0;
 		lateral_POC_sed = 0.0; lateral_PON_sed = 0.0;
+		if (command_line[0].stream_temp_flag == 1) {
+			tin.Q_gw = tin.Q_sub = tin.Q_ret_event = tin.heat_ret_event = tin.Q_ret_soil = 0.0;
+			tin.tavg = tin.tdew = tin.Kdown = tin.Ldown = tin.wind = tin.z = tin.snow_frac = 0.0;
+			tin.pai = 0.0;
+			t_area = t_cov = t_h = t_k = 0.0;
+		}
 		Qout=0.0;
 		Qin=0.0;
 		previous_lateral_input=0.0;
@@ -144,6 +159,48 @@ double  compute_stream_routing(struct command_line_object *command_line,
 			   lateral_PON_labile += patch[0].streamflow_PON_labile * patch[0].area;
 			   lateral_POC_sed += patch[0].streamflow_sedC * patch[0].area;      /* eroded soil organic matter */
 			   lateral_PON_sed += patch[0].streamflow_sedN * patch[0].area;
+			   if (command_line[0].stream_temp_flag == 1) {
+				   /* water by pathway (m3/day): return flow is the day's rain and
+				      snowmelt first, the rest exfiltrated soil water; the remaining
+				      streamflow is subsurface flow */
+				   zone = patch[0].zone;
+				   a = patch[0].area;
+				   vol = patch[0].streamflow * a;
+				   if (vol > 0.0) {
+					   R = patch[0].return_flow * a;
+					   R = (R < 0.0) ? 0.0 : ((R > vol) ? vol : R);
+					   rain = (patch[0].rain_throughfall > 0.0) ? patch[0].rain_throughfall : 0.0;
+					   melt = (patch[0].snow_melt > 0.0) ? patch[0].snow_melt : 0.0;
+					   Pin = (rain + melt) * a;
+					   Rev = (Pin < R) ? Pin : R;
+					   /* rain near the wet-bulb temperature (one third of the way
+					      from dew point to air temperature), snowmelt at 0 C */
+					   T_rain = zone[0].tdewpoint + (zone[0].metv.tavg - zone[0].tdewpoint) / 3.0;
+					   if (T_rain < 0.0) T_rain = 0.0;
+					   T_P = ((rain + melt) > 0.0) ? rain * T_rain / (rain + melt) : T_rain;
+					   tin.Q_sub += vol - R;
+					   tin.Q_ret_event += Rev;
+					   tin.heat_ret_event += Rev * T_P;
+					   tin.Q_ret_soil += R - Rev;
+				   }
+				   /* met and canopy of the stream-side patches, area-weighted */
+				   t_area += a;
+				   tin.tavg += a * zone[0].metv.tavg;
+				   tin.tdew += a * zone[0].tdewpoint;
+				   tin.Kdown += a * (zone[0].Kdown_direct + zone[0].Kdown_diffuse);
+				   tin.Ldown += a * zone[0].Ldown;
+				   tin.wind += a * zone[0].wind;
+				   tin.z += a * zone[0].z;
+				   if (patch[0].snowpack.water_equivalent_depth > 0.0) tin.snow_frac += a;
+				   for (s = 0; s < patch[0].num_canopy_strata; s++) {
+					   strata = patch[0].canopy_strata[s];
+					   if (strata[0].defaults[0][0].epc.veg_type == NON_VEG) continue;
+					   tin.pai += a * strata[0].cover_fraction * strata[0].epv.proj_pai;
+					   t_cov += a * strata[0].cover_fraction;
+					   t_h += a * strata[0].cover_fraction * strata[0].epv.height;
+					   t_k += a * strata[0].cover_fraction * strata[0].defaults[0][0].epc.ext_coef;
+				   }
+			   }
 
 
 	}
@@ -157,6 +214,8 @@ double  compute_stream_routing(struct command_line_object *command_line,
 			hillslope=stream_network[i].neighbour_hill[j];
 			lateral_input_flow += (hillslope[0].base_flow)*hillslope[0].area/dt/(stream_network[i].length); //unit:m2/s
 			sum+= (hillslope[0].base_flow)*hillslope[0].area;
+			if ((command_line[0].stream_temp_flag == 1) && (hillslope[0].base_flow > 0.0))
+				tin.Q_gw += hillslope[0].base_flow * hillslope[0].area;   /* m3/day */
 			if (command_line[0].grow_flag > 0) {
 				lateral_NO3 += hillslope[0].streamflow_NO3 * hillslope[0].area; /* kg N/day */
 				lateral_NH4 += hillslope[0].streamflow_NH4 * hillslope[0].area;
@@ -211,11 +270,43 @@ double  compute_stream_routing(struct command_line_object *command_line,
 		stream_network[i].previous_Qin=Qin;
 		stream_network[i].Qin=0.0;
 
+		/* stream temperature (-strtemp) */
+		if (command_line[0].stream_temp_flag == 1) {
+			if (t_area > 0.0) {
+				tin.tavg /= t_area; tin.tdew /= t_area; tin.Kdown /= t_area; tin.Ldown /= t_area;
+				tin.wind /= t_area; tin.z /= t_area; tin.snow_frac /= t_area; tin.pai /= t_area;
+			}
+			else {
+				/* no stream-side patches (e.g. a lake part of a reach): met of
+				   the reach's fallback zone, no canopy */
+				zone = stream_network[i].temp_zone;
+				tin.tavg = zone[0].metv.tavg; tin.tdew = zone[0].tdewpoint;
+				tin.Kdown = zone[0].Kdown_direct + zone[0].Kdown_diffuse;
+				tin.Ldown = zone[0].Ldown; tin.wind = zone[0].wind; tin.z = zone[0].z;
+				tin.snow_frac = 0.0; tin.pai = 0.0;
+			}
+			tin.h_can = (t_cov > 0.0) ? t_h / t_cov : 0.0;
+			tin.k_ext = (t_cov > 0.0) ? t_k / t_cov : 0.5;
+			tin.Q_up = Qin * 86400.0;
+			tin.heat_up = stream_network[i].heat_in;
+			tin.A_x = alfa * pow(max(stream_network[i].Qout, 0.0), 0.6);
+			tin.V = tin.A_x * stream_network[i].length;
+			tin.tangent = tangent;
+			compute_stream_temperature(&(stream_network[i]), &tin, command_line[0].stream_temp);
+			stream_network[i].heat_in = 0.0;
+		}
+
 		/* compute reach nutrient outlet load and reset inbox for next timestep;
 		   reaches listed as inside a lake/reservoir pass loads through */
 		bgc_here = (command_line[0].stream_bgc_flag == 1)
 			&& !stream_bgc_is_lake(stream_network[i].reach_ID, command_line[0].stream_bgc);
 		if (bgc_here && (command_line[0].grow_flag > 0)) {
+			/* water temperature for processing: -strtemp, else from air temperature */
+			if (command_line[0].stream_temp_flag == 1) T_bgc = stream_network[i].T_mean;
+			else {
+				T_bgc = T_air * 0.72 + 2.99;
+				if (T_bgc < 0.0) T_bgc = 0.0;
+			}
 			/* in-stream storage and processing: sets NO3/NH4/DON/DOC/POC/PON_out */
 			compute_stream_bgc(&(stream_network[i]),
 				stream_network[i].NO3_in + lateral_NO3, stream_network[i].NH4_in + lateral_NH4,
@@ -223,7 +314,7 @@ double  compute_stream_routing(struct command_line_object *command_line,
 				stream_network[i].POC_in + lateral_POC_sed, stream_network[i].PON_in + lateral_PON_sed, lateral_POC, lateral_PON,
 				stream_network[i].Qout * 86400.0,
 				alfa * pow(max(stream_network[i].Qout, 0.0), 0.6) * stream_network[i].length,   /* reach water volume, m3 */
-				T_air, command_line[0].stream_bgc);
+				T_bgc, command_line[0].stream_bgc);
 			stream_network[i].lateral_NO3 = lateral_NO3;
 			stream_network[i].lateral_NH4 = lateral_NH4;
 			stream_network[i].lateral_DON = lateral_DON;
@@ -271,6 +362,9 @@ double  compute_stream_routing(struct command_line_object *command_line,
                             for(k=i;k<num_reaches;k++)
                                if(stream_network[k].reach_ID == downstream_neighbour){
                                     stream_network[k].Qin += Qout/stream_network[i].num_downstream_neighbours;
+					if (command_line[0].stream_temp_flag == 1)
+						stream_network[k].heat_in += Qout * 86400.0 * stream_network[i].T_mean
+							/ stream_network[i].num_downstream_neighbours;
 					if (command_line[0].grow_flag > 0) {
 						stream_network[k].NO3_in += stream_network[i].NO3_out / stream_network[i].num_downstream_neighbours;
 						stream_network[k].NH4_in += stream_network[i].NH4_out / stream_network[i].num_downstream_neighbours;
