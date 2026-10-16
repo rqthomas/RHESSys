@@ -77,7 +77,8 @@ void	output_stream_routing_state(
 				reach->wc_DON, reach->wc_DOC, reach->wc_POC, reach->wc_PON);
 		}
 	}
-	/* stream temperature (-strtemp only): reach_ID T_water T_gw_mem T_sub_mem */
+	/* stream temperature (-strtemp only): reach_ID T_mean T_gw_mem T_sub_mem; the restart
+	   needs only the running means (T_mean is the last day's value, for reference) */
 	for (b=0; b < world[0].num_basin_files; b++) {
 		stream_list = &(world[0].basins[b][0].stream_list);
 		if ((stream_list->stream_network == NULL) || (stream_list->temp_flag != 1)) continue;
@@ -87,7 +88,7 @@ void	output_stream_routing_state(
 		for (i=0; i < stream_list->num_reaches; i++) {
 			reach = &(stream_list->stream_network[i]);
 			fprintf(outfile, "\n   %d %.17g %.17g %.17g", reach->reach_ID,
-				reach->T_water, reach->T_gw_mem, reach->T_sub_mem);
+				reach->T_mean, reach->T_gw_mem, reach->T_sub_mem);
 		}
 	}
 	fprintf(outfile, "\n");

@@ -129,7 +129,7 @@ void	read_stream_routing_state(
 		int nwc;
 		while (fscanf(world_file, "%s", token) == 1) {
 			if (strcmp(token, "stream_temperature_state") == 0) {
-				/* reach_ID T_water T_gw_mem T_sub_mem */
+				/* reach_ID T_mean T_gw_mem T_sub_mem (older states: T_water) */
 				if ((fscanf(world_file, "%d", &basin_ID) != 1)) break;
 				read_record(world_file, record);
 				if (fscanf(world_file, "%d", &num_reaches) != 1) break;
@@ -146,7 +146,6 @@ void	read_stream_routing_state(
 					if ((stream_list == NULL) || (stream_list->stream_network == NULL) || (stream_list->temp_flag != 1)) continue;
 					for (k=0; k < stream_list->num_reaches; k++)
 						if (stream_list->stream_network[k].reach_ID == reach_ID) {
-							stream_list->stream_network[k].T_water = Tw;
 							stream_list->stream_network[k].T_mean = Tw;
 							stream_list->stream_network[k].T_gw_mem = Tg;
 							stream_list->stream_network[k].T_sub_mem = Ts;

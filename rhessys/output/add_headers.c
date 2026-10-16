@@ -665,10 +665,10 @@ void add_headers(struct world_output_file_object *world_output_files,
 				"V_water", "wc_DOC", "wc_DON", "wc_NO3", "wc_NH4", "wc_POC", "wc_PON",
 				"Bed_mic_C", "Bed_N_mineral", "Bed_N_immob", "Bed_N_limit");
 		if (command_line[0].stream_temp_flag == 1)
-			fprintf(outfile, " %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s",
-				"T_mean", "T_end", "T_lat", "T_up", "T_gw", "T_sub", "shade", "pai_rip",
-				"H_sw", "H_lw", "H_evap", "H_sens", "H_bed", "H_ice",
-				"Q_lat_gw", "Q_lat_sub", "Q_lat_ret");
+			fprintf(outfile, " %s %s %s %s %s %s %s %s %s %s %s %s %s",
+				"T_mean", "T_lat", "T_up", "T_gw", "T_sub", "shade", "pai_rip",
+				"H_sw", "H_lw", "H_evap", "H_sens",
+				"Q_lat_gw", "Q_lat_sub");
 		fprintf(outfile, "\n");
 	}	
 	return;

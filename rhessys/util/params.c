@@ -95,7 +95,7 @@ char * getStrParam(int *paramCnt, param **paramPtr, char *paramName, char *readF
             found = 1;
             // Allocate an output string buffer that is the same size as the parameter value string
             sLen = string_length(params[iParam].strVal);
-            outStr = (char *)malloc(sizeof(char) * sLen);
+            outStr = (char *)malloc(sizeof(char) * (sLen + 1));	/* + NUL (sscanf writes it) */
             // Transform the string according to the specified format
             sscanf(params[iParam].strVal, readFormat, outStr);
             params[iParam].accessed = 1;
@@ -130,7 +130,7 @@ char * getStrParam(int *paramCnt, param **paramPtr, char *paramName, char *readF
         strcpy(params[paramInd].format, readFormat);
         // Allocate an output string buffer that is the same size as the parameter value string
         sLen = string_length(defaultVal);
-        outStr = (char *)malloc(sizeof(char) * sLen);
+        outStr = (char *)malloc(sizeof(char) * (sLen + 1));	/* + NUL (sscanf writes it) */
 	sscanf(defaultVal,readFormat,outStr);
         
 	return outStr;
@@ -354,7 +354,7 @@ char * getStrWorldfile(int *paramCnt, param **paramPtr, char *paramName, char *r
             found = 1;
             // Allocate an output string buffer that is the same size as the parameter value string
             sLen = string_length(params[iParam].strVal);
-            outStr = (char *)malloc(sizeof(char) * sLen);
+            outStr = (char *)malloc(sizeof(char) * (sLen + 1));	/* + NUL (sscanf writes it) */
             // Transform the string according to the specified format
             sscanf(params[iParam].strVal, readFormat, outStr);
             params[iParam].accessed = 1;

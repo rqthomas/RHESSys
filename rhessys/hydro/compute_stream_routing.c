@@ -95,7 +95,7 @@ double  compute_stream_routing(struct command_line_object *command_line,
 	double lateral_POC_sed, lateral_PON_sed;
 	/* stream temperature (-strtemp): lateral flows by pathway, met and riparian canopy */
 	struct stream_temp_input tin;
-	double t_area, t_cov, t_h, t_k, a, vol, R, Pin, Rev, T_rain, T_P, rain, melt;
+	double t_area, t_cov, t_h, t_k, a, vol;
 	struct zone_object *zone;
 	struct canopy_strata_object *strata;
 	int s;
@@ -123,8 +123,8 @@ double  compute_stream_routing(struct command_line_object *command_line,
 		lateral_POC = 0.0; lateral_PON = 0.0; lateral_POC_labile = 0.0; lateral_PON_labile = 0.0;
 		lateral_POC_sed = 0.0; lateral_PON_sed = 0.0;
 		if (command_line[0].stream_temp_flag == 1) {
-			tin.Q_gw = tin.Q_sub = tin.Q_ret_event = tin.heat_ret_event = tin.Q_ret_soil = 0.0;
-			tin.tavg = tin.tdew = tin.Kdown = tin.Ldown = tin.wind = tin.z = tin.snow_frac = 0.0;
+			tin.Q_gw = tin.Q_sub = 0.0;
+			tin.tavg = tin.tdew = tin.Kdown = tin.Ldown = tin.wind = tin.z = 0.0;
 			tin.pai = 0.0;
 			t_area = t_cov = t_h = t_k = 0.0;
 		}
@@ -160,29 +160,11 @@ double  compute_stream_routing(struct command_line_object *command_line,
 			   lateral_POC_sed += patch[0].streamflow_sedC * patch[0].area;      /* eroded soil organic matter */
 			   lateral_PON_sed += patch[0].streamflow_sedN * patch[0].area;
 			   if (command_line[0].stream_temp_flag == 1) {
-				   /* water by pathway (m3/day): return flow is the day's rain and
-				      snowmelt first, the rest exfiltrated soil water; the remaining
-				      streamflow is subsurface flow */
+				   /* patch streamflow (subsurface and return flow), m3/day */
 				   zone = patch[0].zone;
 				   a = patch[0].area;
 				   vol = patch[0].streamflow * a;
-				   if (vol > 0.0) {
-					   R = patch[0].return_flow * a;
-					   R = (R < 0.0) ? 0.0 : ((R > vol) ? vol : R);
-					   rain = (patch[0].rain_throughfall > 0.0) ? patch[0].rain_throughfall : 0.0;
-					   melt = (patch[0].snow_melt > 0.0) ? patch[0].snow_melt : 0.0;
-					   Pin = (rain + melt) * a;
-					   Rev = (Pin < R) ? Pin : R;
-					   /* rain near the wet-bulb temperature (one third of the way
-					      from dew point to air temperature), snowmelt at 0 C */
-					   T_rain = zone[0].tdewpoint + (zone[0].metv.tavg - zone[0].tdewpoint) / 3.0;
-					   if (T_rain < 0.0) T_rain = 0.0;
-					   T_P = ((rain + melt) > 0.0) ? rain * T_rain / (rain + melt) : T_rain;
-					   tin.Q_sub += vol - R;
-					   tin.Q_ret_event += Rev;
-					   tin.heat_ret_event += Rev * T_P;
-					   tin.Q_ret_soil += R - Rev;
-				   }
+				   if (vol > 0.0) tin.Q_sub += vol;
 				   /* met and canopy of the stream-side patches, area-weighted */
 				   t_area += a;
 				   tin.tavg += a * zone[0].metv.tavg;
@@ -191,7 +173,6 @@ double  compute_stream_routing(struct command_line_object *command_line,
 				   tin.Ldown += a * zone[0].Ldown;
 				   tin.wind += a * zone[0].wind;
 				   tin.z += a * zone[0].z;
-				   if (patch[0].snowpack.water_equivalent_depth > 0.0) tin.snow_frac += a;
 				   for (s = 0; s < patch[0].num_canopy_strata; s++) {
 					   strata = patch[0].canopy_strata[s];
 					   if (strata[0].defaults[0][0].epc.veg_type == NON_VEG) continue;
@@ -274,7 +255,7 @@ double  compute_stream_routing(struct command_line_object *command_line,
 		if (command_line[0].stream_temp_flag == 1) {
 			if (t_area > 0.0) {
 				tin.tavg /= t_area; tin.tdew /= t_area; tin.Kdown /= t_area; tin.Ldown /= t_area;
-				tin.wind /= t_area; tin.z /= t_area; tin.snow_frac /= t_area; tin.pai /= t_area;
+				tin.wind /= t_area; tin.z /= t_area; tin.pai /= t_area;
 			}
 			else {
 				/* no stream-side patches (e.g. a lake part of a reach): met of
@@ -283,14 +264,13 @@ double  compute_stream_routing(struct command_line_object *command_line,
 				tin.tavg = zone[0].metv.tavg; tin.tdew = zone[0].tdewpoint;
 				tin.Kdown = zone[0].Kdown_direct + zone[0].Kdown_diffuse;
 				tin.Ldown = zone[0].Ldown; tin.wind = zone[0].wind; tin.z = zone[0].z;
-				tin.snow_frac = 0.0; tin.pai = 0.0;
+				tin.pai = 0.0;
 			}
 			tin.h_can = (t_cov > 0.0) ? t_h / t_cov : 0.0;
 			tin.k_ext = (t_cov > 0.0) ? t_k / t_cov : 0.5;
 			tin.Q_up = Qin * 86400.0;
 			tin.heat_up = stream_network[i].heat_in;
 			tin.A_x = alfa * pow(max(stream_network[i].Qout, 0.0), 0.6);
-			tin.V = tin.A_x * stream_network[i].length;
 			tin.tangent = tangent;
 			compute_stream_temperature(&(stream_network[i]), &tin, command_line[0].stream_temp);
 			stream_network[i].heat_in = 0.0;
