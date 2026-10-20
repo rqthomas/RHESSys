@@ -174,10 +174,10 @@ void update_basin_patch_accumulator(
 					patch[0].acc_month.uptake += patch[0].ndf.sminn_to_npool;
 					patch[0].acc_month.DON_loss +=
 							(patch[0].soil_ns.DON_Qout_total
-									- patch[0].soil_ns.DON_Qout_total);
+									- patch[0].soil_ns.DON_Qin_total);
 					patch[0].acc_month.DOC_loss +=
 							(patch[0].soil_cs.DOC_Qout_total
-									- patch[0].soil_cs.DOC_Qout_total);
+									- patch[0].soil_cs.DOC_Qin_total);
 					patch[0].acc_month.psn += patch[0].net_plant_psn;
 					patch[0].acc_month.snowpack =
 							max(patch[0].snowpack.water_equivalent_depth, patch[0].acc_month.snowpack);
@@ -211,10 +211,13 @@ void update_basin_patch_accumulator(
 							+ patch[0].surface_ns_leach);
 					patch[0].acc_year.DON_loss +=
 							(patch[0].soil_ns.DON_Qout_total
-									- patch[0].soil_ns.DON_Qout_total);
+									- patch[0].soil_ns.DON_Qin_total);
 					patch[0].acc_year.DOC_loss +=
 							(patch[0].soil_cs.DOC_Qout_total
-									- patch[0].soil_cs.DOC_Qout_total);
+									- patch[0].soil_cs.DOC_Qin_total);
+					patch[0].acc_year.NO3_loss +=
+							(patch[0].soil_ns.NO3_Qout_total
+									- patch[0].soil_ns.NO3_Qin_total);
 					patch[0].acc_year.streamflow += patch[0].streamflow;
 					patch[0].acc_year.Qout_total += patch[0].Qout_total;
 					patch[0].acc_year.Qin_total += patch[0].Qin_total;

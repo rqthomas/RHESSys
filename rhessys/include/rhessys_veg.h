@@ -166,7 +166,7 @@ struct veg_out {
 	double	mb_n_other, mb_n_resize;
 };
 
-/* Model time (FATES SetFatesTime); day_of_year is 0-based as in CLM. */
+/* Model time (FATES SetFatesTime); day_of_year is 1-based (1 = 1 Jan) as in CLM. */
 struct veg_time {
 	int	year, month, day;
 	int	day_of_year;
@@ -195,6 +195,16 @@ typedef void (*veg_set_ndemand_t)(int *mode);
 typedef void (*veg_site_nneed_t)(int *site, double *need);
 /* today's FATES litter by source (g/m2/day): C leaf, seed, AG CWD, fine root, BG CWD; then N likewise */
 typedef void (*veg_litter_src_t)(int *site, double *v);
+/* stream-side sites: share of fresh leaf litter that falls into the channel (set daily) */
+typedef void (*veg_set_leaf_export_t)(int *site, double *frac);
+/* today's leaf litter taken out of FATES for the stream (g/m2/day): C, N, labile C, labile N */
+typedef void (*veg_leaf_export_t)(int *site, double *v);
+/* -demog_litter_direct on/off (FATES releases all fine litter on the day it falls) */
+typedef void (*veg_set_litter_direct_t)(int *flag);
+/* -demog_litter_direct: today's litter (g/m2/day) v[class + 3 source + 15 element],
+   class 0 labile 1 cellulose 2 lignin; source 0 leaf fines 1 seeds 2 AG CWD 3 fine roots 4 BG CWD;
+   element 0 C 1 N */
+typedef void (*veg_litter_dcmp_t)(int *site, double *v);
 /* FATES CWD fragmentation split: v[0] cellulose, v[1] lignin fraction */
 typedef void (*veg_cwd_frac_t)(double *v);
 /* FATES live leaf C of a site (kgC/m2), WMFire fuel */
@@ -230,6 +240,10 @@ extern veg_inv_assign_t    p_veg_inv_assign;
 extern veg_set_ndemand_t   p_veg_set_ndemand;
 extern veg_site_nneed_t    p_veg_site_nneed;
 extern veg_litter_src_t    p_veg_litter_src;
+extern veg_set_leaf_export_t p_veg_set_leaf_export;
+extern veg_leaf_export_t   p_veg_leaf_export;
+extern veg_set_litter_direct_t p_veg_set_litter_direct;
+extern veg_litter_dcmp_t   p_veg_litter_dcmp;
 extern veg_cwd_frac_t      p_veg_cwd_frac;
 
 #define veg_init       (*p_veg_init)
@@ -249,6 +263,10 @@ extern veg_cwd_frac_t      p_veg_cwd_frac;
 #define veg_set_ndemand   (*p_veg_set_ndemand)
 #define veg_site_nneed    (*p_veg_site_nneed)
 #define veg_litter_src    (*p_veg_litter_src)
+#define veg_set_leaf_export (*p_veg_set_leaf_export)
+#define veg_leaf_export   (*p_veg_leaf_export)
+#define veg_set_litter_direct (*p_veg_set_litter_direct)
+#define veg_litter_dcmp   (*p_veg_litter_dcmp)
 #define veg_cwd_frac      (*p_veg_cwd_frac)
 
 /* Select the backend: "legacy" (default) or "fates". 0 on success. */

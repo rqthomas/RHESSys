@@ -38,6 +38,7 @@
 #include "rhessys.h"
 #include "rhessys_veg.h"
 #include "rhessys_soil_adaptor.h"
+#include "phys_constants.h"	/* CEL_CN, LIG_CN (-demog_litter_direct) */
 
 long	julday(struct date);
 double	compute_saturation_vapor_pressure(double);
@@ -85,6 +86,12 @@ static double		wm_area_burned = 0.0;	/* sum over events of frac x patch area (m2
 static double		resize_max = 0.0;	/* max |FATES patch_resize_err N| (kg/m2/day) */
 static double		err_max = 0.0, res_err_max = 0.0;	/* FATES's own N balance error */
 static double		tot_firec = 0.0, tot_firen = 0.0, tot_harvc = 0.0, tot_harvn = 0.0;
+static double		tot_streamc = 0.0, tot_streamn = 0.0;	/* FATES leaf litter into streams (g/m2/day x area) */
+/* -demog_litter_direct: FATES fine litter filed into RHESSys pools with the legacy rules */
+static int		litter_direct = 0;
+static long		ld_nfall = 0, ld_nall = 0;	/* site-days whose labile N fell back to C-proportional */
+static double		ld_c3 = 0.0, ld_c = 0.0;	/* C into shielded cellulose / all C filed (x area) */
+static double		ld_cerr = 0.0, ld_nerr = 0.0;	/* max |filed - FATES litter flux| per site-day (g/m2/day) */
 /* FATES fuel consumed in a fire: RHESSys's litter consumption fractions
    (litr1/2 100 %, litr4 71 %; compute_fire_effects) weighted by FATES leaf-
    litter chemistry (0.25 / 0.50 / 0.25 labile / cellulose / lignin) */
@@ -127,6 +134,11 @@ static int		reference_date = 0;
 /* diagnostics */
 static FILE		*diag = NULL;
 static struct patch_object *diag_patch = NULL;
+/* cohort output (<prefix>_fates_cohorts.csv): which sites (1 = write) and when.
+   RHESSYS_FATES_COHORTS = all | <patch ID>,<patch ID>,...  (default: the diagnostic patch)
+   RHESSYS_FATES_COHORT_FREQ = semiannual (1 Jan + 1 Jul, default) | monthly | yearly (1 Jan) */
+static char		*coh_on = NULL;
+static int		coh_freq = 0;		/* 0 semiannual, 1 monthly, 2 yearly */
 static double		max_resid = 0.0, sum_resid = 0.0;
 static long		n_site_days = 0, n_bad_total = 0, n_resid_fail = 0;
 static int		max_resid_patch = -1;
@@ -237,14 +249,102 @@ static void apply_structure(struct patch_object *patch, struct veg_out *o)
 /* land use off); the interface itself is checked by comparing the uptake    */
 /* handed to FATES with the uptake it distributed to cohorts.                */
 /*--------------------------------------------------------------------------*/
+/*--------------------------------------------------------------------------*/
+/* -demog_litter_direct: file one source of today's FATES litter (g/m2/day,  */
+/* c and n by class: labile, cellulose, lignin) into RHESSys pools with the  */
+/* legacy rules. Cellulose is split into unshielded (litr2) and shielded     */
+/* (litr3) by the lignin:cellulose ratio as construct_stratum_defaults does  */
+/* for leaf / fine-root / dead-wood litter. Fines (leaves, seeds, fine       */
+/* roots): cellulose N at CEL_CN, lignin N at LIG_CN, the rest to labile, as */
+/* compute_leaf_litfall / compute_froot_litfall; if FATES litter has too     */
+/* little N for that, N goes in proportion to C (counted in ld_nfall). Wood: */
+/* N in proportion to C, as compute_cwd_decay. Total C and N are FATES's.    */
+/*--------------------------------------------------------------------------*/
+static double shielded_share(double lig, double cel)
+{
+	double r;
+	if (cel <= 0.0)
+		return(0.0);
+	r = lig / cel;
+	if (r < 0.45)
+		return(0.0);
+	if (r < 0.7)
+		return((r - 0.45) * 3.2);
+	return(0.8);
+}
+
+static void file_litter(const double *c, const double *n, int fines, double *pc[4], double *pn[4])
+{
+	double	cc[4], nn[4], ctot, ntot, f;
+	int	k;
+	f = shielded_share(c[2], c[1]);
+	cc[0] = c[0]; cc[1] = c[1] * (1.0 - f); cc[2] = c[1] * f; cc[3] = c[2];
+	ctot = cc[0] + cc[1] + cc[2] + cc[3];
+	ntot = n[0] + n[1] + n[2];
+	if (ctot <= 0.0)
+		return;
+	if (fines) {
+		nn[1] = cc[1] / CEL_CN; nn[2] = cc[2] / CEL_CN; nn[3] = cc[3] / LIG_CN;
+		nn[0] = ntot - nn[1] - nn[2] - nn[3];
+		ld_nall++;
+		if (nn[0] < 0.0) {
+			ld_nfall++;
+			for (k = 0; k < 4; k++) nn[k] = ntot * cc[k] / ctot;
+		}
+	}
+	else
+		for (k = 0; k < 4; k++) nn[k] = ntot * cc[k] / ctot;
+	for (k = 0; k < 4; k++) {
+		*pc[k] += cc[k] / 1000.0;
+		*pn[k] += nn[k] / 1000.0;
+	}
+}
+
 static void fates_litter_and_budget(struct patch_object *patch, int site, double given)
 {
-	double	litn, res, res2;
+	double	litn, res, res2, exp_n = 0.0;
 	struct veg_out *o = &site_out[site - 1];
 
 	/* surface fragments (leaves, above-ground CWD, seeds) -> forest-floor
 	   litter; fine roots + below-ground CWD -> RHESSys below-ground litter
 	   (decomposed by update_decomp_root) */
+	if (litter_direct) {
+		/* -demog_litter_direct: by source with the legacy rules (see file_litter) */
+		double v[30], c[3], n[3];
+		double *sc[4] = { &patch[0].litter_cs.litr1c, &patch[0].litter_cs.litr2c,
+				  &patch[0].litter_cs.litr3c, &patch[0].litter_cs.litr4c };
+		double *sn[4] = { &patch[0].litter_ns.litr1n, &patch[0].litter_ns.litr2n,
+				  &patch[0].litter_ns.litr3n, &patch[0].litter_ns.litr4n };
+		double *bc[4] = { &patch[0].litter_cs.litr1c_bg, &patch[0].litter_cs.litr2c_bg,
+				  &patch[0].litter_cs.litr3c_bg, &patch[0].litter_cs.litr4c_bg };
+		double *bn[4] = { &patch[0].litter_ns.litr1n_bg, &patch[0].litter_ns.litr2n_bg,
+				  &patch[0].litter_ns.litr3n_bg, &patch[0].litter_ns.litr4n_bg };
+		double l3 = patch[0].litter_cs.litr3c + patch[0].litter_cs.litr3c_bg;
+		int k;
+		veg_litter_dcmp(&site, v);
+		{	/* closure: the per-source split must add up to FATES's merged litter flux */
+			double fc = 0.0, fn = 0.0;
+			for (k = 0; k < 15; k++) { fc += v[k]; fn += v[15 + k]; }
+			ld_cerr = max(ld_cerr, fabs(fc - (o[0].lit_c_lab + o[0].lit_c_cel + o[0].lit_c_lig)));
+			ld_nerr = max(ld_nerr, fabs(fn - (o[0].lit_n_lab + o[0].lit_n_cel + o[0].lit_n_lig)));
+		}
+#define LD(cls, src, el) v[(cls) + 3 * (src) + 15 * (el)]
+		for (k = 0; k < 3; k++) {			/* leaves + seeds: surface fines */
+			c[k] = LD(k, 0, 0) + LD(k, 1, 0);
+			n[k] = LD(k, 0, 1) + LD(k, 1, 1);
+		}
+		file_litter(c, n, 1, sc, sn);
+		for (k = 0; k < 3; k++) { c[k] = LD(k, 2, 0); n[k] = LD(k, 2, 1); }	/* AG CWD */
+		file_litter(c, n, 0, sc, sn);
+		for (k = 0; k < 3; k++) { c[k] = LD(k, 3, 0); n[k] = LD(k, 3, 1); }	/* fine roots */
+		file_litter(c, n, 1, bc, bn);
+		for (k = 0; k < 3; k++) { c[k] = LD(k, 4, 0); n[k] = LD(k, 4, 1); }	/* BG CWD */
+		file_litter(c, n, 0, bc, bn);
+#undef LD
+		ld_c3 += patch[0].area * (patch[0].litter_cs.litr3c + patch[0].litter_cs.litr3c_bg - l3) * 1000.0;
+		ld_c += patch[0].area * (o[0].lit_c_lab + o[0].lit_c_cel + o[0].lit_c_lig);
+	}
+	else {
 	patch[0].litter_cs.litr1c += o[0].ls_c_lab / 1000.0;
 	patch[0].litter_cs.litr2c += o[0].ls_c_cel / 1000.0;
 	patch[0].litter_cs.litr4c += o[0].ls_c_lig / 1000.0;
@@ -257,6 +357,7 @@ static void fates_litter_and_budget(struct patch_object *patch, int site, double
 	patch[0].litter_ns.litr1n_bg += o[0].lb_n_lab / 1000.0;
 	patch[0].litter_ns.litr2n_bg += o[0].lb_n_cel / 1000.0;
 	patch[0].litter_ns.litr4n_bg += o[0].lb_n_lig / 1000.0;
+	}
 	split_err_max = max(split_err_max, o[0].lit_split_err);
 	if (command_line_wood_resp > 0.0) {
 		/* wood decay (-demog_wood_resp): fungi respire this fraction of the C of today's
@@ -280,6 +381,20 @@ static void fates_litter_and_budget(struct patch_object *patch, int site, double
 	patch[0].litter_ns.litr1n_bg += o[0].efflux_n / 1000.0;
 	tot_effc += patch[0].area * o[0].efflux_c;
 	tot_effn += patch[0].area * o[0].efflux_n;
+	/* stream-side patches: FATES leaf litter that fell into the channel today
+	   (taken out of FATES before its litter pools) -> stream POC/PON, as the
+	   legacy leaf litterfall in canopy_stratum_daily_I */
+	{
+		double lx[4];
+		veg_leaf_export(&site, lx);			/* g/m2/day: C, N, labile C, labile N */
+		patch[0].streamflow_POC += lx[0] / 1000.0;
+		patch[0].streamflow_PON += lx[1] / 1000.0;
+		patch[0].streamflow_POC_labile += lx[2] / 1000.0;
+		patch[0].streamflow_PON_labile += lx[3] / 1000.0;
+		exp_n = lx[1];
+		tot_streamc += patch[0].area * lx[0];
+		tot_streamn += patch[0].area * lx[1];
+	}
 	litn = o[0].lit_n_lab + o[0].lit_n_cel + o[0].lit_n_lig + o[0].efflux_n;
 	tot_firec += patch[0].area * o[0].fire_c;
 	tot_firen += patch[0].area * o[0].fire_n;
@@ -292,9 +407,9 @@ static void fates_litter_and_budget(struct patch_object *patch, int site, double
 	tot_area_days += patch[0].area;
 	if (site_nprev[site - 1] >= 0.0) {
 		/* FATES N change = uptake received - (litter + efflux) N sent
-		   - N burned - N exported in harvested wood */
+		   - N burned - N exported in harvested wood - leaf N into the stream */
 		res = (o[0].n_stock - site_nprev[site - 1])
-			- (o[0].n_uptake_recv - litn - o[0].fire_n - o[0].harvest_n) / 1000.0
+			- (o[0].n_uptake_recv - litn - o[0].fire_n - o[0].harvest_n - exp_n) / 1000.0
 			- o[0].mb_n_other;	/* FATES-internal terms (seeds, patch resizing, ...) */
 		resize_max = max(resize_max, fabs(o[0].mb_n_resize));
 		err_max = max(err_max, fabs(o[0].mb_n_err));
@@ -714,7 +829,7 @@ static void write_diag_row(struct patch_object *patch, struct date d, struct veg
 		bc[0].relhumid24, bc[0].wind24, bc[0].tempk[0], n_bad, bc[0].w_scalar, bc[0].t_scalar);
 }
 
-/* FATES model time for a RHESSys date (day_of_year 0-based, real calendar) */
+/* FATES model time for a RHESSys date (day_of_year 1-based, as CLM's get_curr_calday) */
 static void fill_time(struct date d, struct veg_time *t)
 {
 	long jd;
@@ -725,7 +840,7 @@ static void fill_time(struct date d, struct veg_time *t)
 	t[0].year = (int) d.year;
 	t[0].month = (int) d.month;
 	t[0].day = (int) d.day;
-	t[0].day_of_year = (int) (jd - julday(jan1));
+	t[0].day_of_year = (int) (jd - julday(jan1)) + 1;	/* 1 = 1 Jan (FATES phenology: day 1, day 270) */
 	t[0].days_per_year = (int) (julday(jan1n) - julday(jan1));
 	/* FATES assumes a no-leap (365-day) year, as CLM runs it: its cohort
 	   number update uses hlm_freq_day = 1/days_per_year while its mortality
@@ -734,8 +849,8 @@ static void fill_time(struct date d, struct veg_time *t)
 	   management kills). Leap years: 365 days, 31 Dec repeats day 365. */
 	if (t[0].days_per_year > 365) {
 		t[0].days_per_year = 365;
-		if (t[0].day_of_year > 364)
-			t[0].day_of_year = 364;
+		if (t[0].day_of_year > 365)
+			t[0].day_of_year = 365;
 	}
 	t[0].current_date = t[0].year * 10000 + t[0].month * 100 + t[0].day;
 	t[0].reference_date = reference_date;
@@ -1093,7 +1208,7 @@ void veg_host_init(struct world_object *world, struct command_line_object *comma
 		&inv_len, path, &log_len, &nlevsoil, &nlevdecomp, &command_line[0].demog_flag,
 		&nsites, &command_line[0].demog_restart);
 	{
-		int mode = command_line[0].demog_nneed;
+		int mode = command_line[0].demog_nneed + 2 * command_line[0].demog_nstore_reg;
 		veg_set_ndemand(&mode);
 	}
 	command_line_wood_resp = (command_line[0].demog_flag == 3) ? command_line[0].demog_wood_resp : 0.0;
@@ -1104,6 +1219,16 @@ void veg_host_init(struct world_object *world, struct command_line_object *comma
 	}
 	if (command_line[0].demog_nneed)
 		fprintf(stderr, "FATES host: plant N demand = max(RD root capacity, potential growth N need) (-demog_nneed)\n");
+	if (command_line[0].demog_nstore_reg)
+		fprintf(stderr, "FATES host: plant N claim x max(0, 1 - N store / N store overflow level) per cohort (-demog_nstore_reg)\n");
+	litter_direct = (command_line[0].demog_flag == 3) && command_line[0].demog_litter_direct;
+	{
+		int f = litter_direct;
+		veg_set_litter_direct(&f);
+	}
+	if (litter_direct)
+		fprintf(stderr, "FATES host: fine litter (leaves, seeds, fine roots) into RHESSys litter pools on the day "
+			"it falls, legacy filing rules (-demog_litter_direct); CWD still fragments in FATES\n");
 	for (s = 0; s < nsites; s++) {
 		memset(&bc, 0, sizeof(bc));
 		soil_bc(smap[s].patch, smap[s].site, &bc, &out, smap[s].patch[0].Tsoil);
@@ -1174,6 +1299,42 @@ void veg_host_init(struct world_object *world, struct command_line_object *comma
 				diag_id, smap[0].patch[0].ID);
 			diag_patch = smap[0].patch;
 		}
+	}
+	/*--- cohort output: sites and frequency ---*/
+	coh_on = (char *) calloc(nsites, sizeof(char));
+	env = getenv("RHESSYS_FATES_COHORTS");
+	if ((env != NULL) && (strcmp(env, "all") == 0)) {
+		for (s = 0; s < nsites; s++) coh_on[s] = 1;
+	}
+	else if ((env != NULL) && (env[0] != '\0')) {
+		char buf[8192], *tk;
+		int n_req = 0, n_hit = 0, id;
+		strncpy(buf, env, sizeof(buf) - 1); buf[sizeof(buf) - 1] = '\0';
+		for (tk = strtok(buf, ", "); tk != NULL; tk = strtok(NULL, ", ")) {
+			id = atoi(tk); n_req++;
+			for (s = 0; s < nsites; s++)
+				if (smap[s].patch[0].ID == id) { coh_on[smap[s].site - 1] = 1; n_hit++; break; }
+		}
+		if (n_hit < n_req)
+			fprintf(stderr, "WARNING: RHESSYS_FATES_COHORTS: %d of %d patch IDs are not vegetated FATES sites\n",
+				n_req - n_hit, n_req);
+	}
+	else {
+		for (s = 0; s < nsites; s++)
+			if (smap[s].patch == diag_patch) coh_on[smap[s].site - 1] = 1;
+	}
+	env = getenv("RHESSYS_FATES_COHORT_FREQ");
+	if (env != NULL) {
+		if (strcmp(env, "monthly") == 0) coh_freq = 1;
+		else if (strcmp(env, "yearly") == 0) coh_freq = 2;
+		else if (strcmp(env, "semiannual") != 0)
+			fprintf(stderr, "WARNING: RHESSYS_FATES_COHORT_FREQ %s unknown; using semiannual\n", env);
+	}
+	{
+		int n_on = 0;
+		for (s = 0; s < nsites; s++) n_on += coh_on[s];
+		fprintf(stderr, "FATES host: cohort output for %d site(s), %s\n", n_on,
+			(coh_freq == 1) ? "monthly" : ((coh_freq == 2) ? "1 Jan" : "1 Jan + 1 Jul"));
 	}
 	qsort(smap, nsites, sizeof(struct site_map), cmp_map);
 	free(lat);
@@ -1475,6 +1636,12 @@ void veg_host_daily_batch(struct command_line_object *command_line, struct date 
 		site_bc[s].n_uptake_no3 = site_no3[s];
 		/* Phase 6: today's TEC disturbance, if any */
 		resolve_disturbance(s, &site_bc[s]);
+		/* mode 3, stream-side patches: the share of today's fresh FATES leaf litter
+		   that falls into the channel (stream_litter_frac, as for legacy litterfall) */
+		if ((host_mode == 3) && (patch[0].stream_litter_frac > 0.0)) {
+			double f = patch[0].stream_litter_frac;
+			veg_set_leaf_export(&site, &f);
+		}
 	}
 	/*--- all FATES sites: day + night flux sub-steps + daily dynamics ---*/
 	w1 = wall_now();
@@ -1514,9 +1681,10 @@ void veg_host_daily(struct world_object *world, struct basin_object *basin,
 	if (site == 0)
 		return;					/* non-vegetated patch */
 
-	/*--- diagnostics: cohort structure of the diagnostic patch, 1 Jan + 1 Jul ---*/
-	if ((patch == diag_patch) && (current_date.day == 1)
-	    && ((current_date.month == 1) || (current_date.month == 7))) {
+	/*--- cohort output: selected sites on the first of the month (see coh_freq) ---*/
+	if ((coh_on != NULL) && coh_on[site - 1] && (current_date.day == 1)
+	    && ((coh_freq == 1) || (current_date.month == 1)
+		|| ((coh_freq == 0) && (current_date.month == 7)))) {
 		static int first = 1;
 		int ymd = (int) (current_date.year * 10000 + current_date.month * 100 + current_date.day);
 		size_t fl = strlen(cohort_file);
@@ -1757,6 +1925,15 @@ void veg_host_finish(struct command_line_object *command_line)
 			tot_area_days ? tot_harvc / (tot_area_days / max(nb_n / (double) max(nsites, 1), 1.0)) : 0.0,
 			tot_area_days ? tot_harvn / (tot_area_days / max(nb_n / (double) max(nsites, 1), 1.0)) : 0.0,
 			resize_max, err_max, res_err_max);
+	if (litter_direct)
+		fprintf(stderr, "FATES host -demog_litter_direct: %.4f of litter C filed into shielded cellulose (litr3); "
+			"labile N fell back to C-proportional on %ld of %ld fine-litter filings; "
+			"max |filed - FATES litter flux| %.3e gC/m2/day, %.3e gN/m2/day\n",
+			ld_c ? ld_c3 / ld_c : 0.0, ld_nfall, ld_nall, ld_cerr, ld_nerr);
+	if (command_line[0].demog_flag == 3)
+		fprintf(stderr, "FATES host leaf litter into streams (stream-side patches, stream_litter_frac): "
+			"%.5f gC/m2/day, %.6f gN/m2/day (basin-area mean over the run)\n",
+			tot_area_days ? tot_streamc / tot_area_days : 0.0, tot_area_days ? tot_streamn / tot_area_days : 0.0);
 	if (command_line[0].demog_flag == 3)
 		fprintf(stderr, "FATES host litter split (surface vs below ground) vs FATES merged flux: "
 			"max error %.3e g/m2/day; root efflux delivered to below-ground labile litter "

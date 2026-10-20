@@ -113,7 +113,9 @@ struct	command_line_object	*construct_command_line(
 	command_line[0].demog_restart = 0;
 	command_line[0].fates_mgmtfile[0] = '\0';
 	command_line[0].demog_nneed = 0;
+	command_line[0].demog_nstore_reg = 0;
 	command_line[0].demog_wood_resp = 0.0;
+	command_line[0].demog_litter_direct = 0;
 	command_line[0].vgsen_flag = 0;
 	command_line[0].FillSpill_flag=0;	
 	command_line[0].evap_use_longwave_flag = 0;
@@ -403,6 +405,16 @@ printf("%s ",command_line[0].WUI_filename);
 			/*-------------------------------------------------*/
 			/* FATES forest management: -demog_mgmt <driver file> (mode 3) */
 			/*-------------------------------------------------*/
+			else if ( strcmp(main_argv[i],"-demog_litter_direct") == 0 ){
+				/* FATES fine litter to RHESSys litter pools on the day it falls (legacy rules) */
+				command_line[0].demog_litter_direct = 1;
+				i++;
+			}
+			else if ( strcmp(main_argv[i],"-demog_nstore_reg") == 0 ){
+				/* FATES plant N claim scaled by each cohort's room in its N store */
+				command_line[0].demog_nstore_reg = 1;
+				i++;
+			}
 			else if ( strcmp(main_argv[i],"-demog_nneed") == 0 ){
 				/* FATES plant N demand from potential growth, not only root capacity */
 				command_line[0].demog_nneed = 1;
@@ -1492,6 +1504,10 @@ printf("%s ",command_line[0].WUI_filename);
 
 	if ((command_line[0].fates_mgmtfile[0] != '\0') && (command_line[0].demog_flag != 3)) {
 		fprintf(stderr, "FATAL ERROR: -demog_mgmt needs -demog <params> 3\n");
+		exit(EXIT_FAILURE);
+	}
+	if (command_line[0].demog_litter_direct && (command_line[0].demog_flag != 3)) {
+		fprintf(stderr, "FATAL ERROR: -demog_litter_direct needs -demog <params> 3\n");
 		exit(EXIT_FAILURE);
 	}
 	if ((command_line[0].demog_wood_resp > 0.0) && (command_line[0].demog_flag != 3)) {

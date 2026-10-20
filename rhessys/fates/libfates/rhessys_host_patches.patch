@@ -1,0 +1,399 @@
+--- a/biogeochem/EDCanopyStructureMod.F90
++++ b/biogeochem/EDCanopyStructureMod.F90
+@@ -422,10 +422,24 @@ contains
+     integer  :: ilyr_change     ! layer offset from current for the destination (+/- 1)
+     integer  :: ic,ic_n,ic_nn   ! Cohort indices
+     integer  :: n_layer         ! The number of cohorts in the layer
++    integer  :: n_co_patch      ! RHESSys host: cohorts in the patch (scratch-vector size check)
+ 
+ 
+     if (target_area<nearzero) return
+ 
++    ! RHESSys host: co_scr is allocated with max_cohort_per_patch, but a patch can hold
++    ! more cohorts than that between fusions (recruits, layer splits); grow it if needed
++    n_co_patch = 0
++    cohort => patch%tallest
++    do while (associated(cohort))
++       n_co_patch = n_co_patch + 1
++       cohort => cohort%shorter
++    end do
++    if (n_co_patch > size(patch%co_scr)) then
++       deallocate(patch%co_scr)
++       allocate(patch%co_scr(2*n_co_patch))
++    end if
++
+     ! Use the patch's scratch vector of cohorts
+     ! to help track which cohorts are in the target layer
+     associate(layer_co => patch%co_scr)
+--- a/biogeochem/EDLoggingMortalityMod.F90
++++ b/biogeochem/EDLoggingMortalityMod.F90
+@@ -83,7 +83,62 @@ module EDLoggingMortalityMod
+    implicit none
+    private
+ 
++   ! RHESSys host patch (2026-10-12): a host-scheduled logging event for the
++   ! site being processed. Set by the host before ed_ecosystem_dynamics; when
++   ! true (and hlm_use_logging is on) IsItLoggingTime reports logging time
++   ! regardless of fates_landuse_logging_event_code. Both flags are
++   ! threadprivate because the host runs sites in parallel (OpenMP).
++   logical, public :: host_logging_trigger = .false.
++   !$omp threadprivate(host_logging_trigger)
+    logical, protected :: logging_time   ! If true, logging should be 
++   !$omp threadprivate(logging_time)
++
++   ! RHESSys host patch (rhessys_host_harvest_hook, 2026-10-12): host-specified
++   ! per-cohort logging rates (forest-management module). When the host sets
++   ! host_harvest_active for the site being processed, the two places that
++   ! compute a cohort's logging rates (disturbance_rates, Mortality_Derivative)
++   ! call host_harvest_override after LoggingMortality_frac, and the host's
++   ! value replaces logging_coll_under_frac (understory killed under removed
++   ! crowns). The open-canopy area transfer of a logging event is skipped
++   ! while it is active. Null pointer / inactive flag = stock FATES.
++   abstract interface
++      subroutine host_harvest_hook_if(site, cohort, lmort_direct, lmort_collateral, &
++                                      lmort_infra, l_degrad)
++         import :: ed_site_type, fates_cohort_type, r8
++         type(ed_site_type),      intent(inout), target :: site
++         type(fates_cohort_type), intent(inout), target :: cohort
++         real(r8),                intent(inout) :: lmort_direct, lmort_collateral
++         real(r8),                intent(inout) :: lmort_infra, l_degrad
++      end subroutine host_harvest_hook_if
++   end interface
++   procedure(host_harvest_hook_if), pointer, public :: host_harvest_override => null()
++   logical,  public :: host_harvest_active  = .false.
++   real(r8), public :: host_coll_under_frac = -1.0_r8   ! < 0: use logging_coll_under_frac
++   ! whole above-ground biomass harvest (VM agb_harvest): directly logged trees export
++   ! all above-ground wood (branches + trunk) as product instead of the trunk x export frac
++   logical,  public :: host_agb_harvest = .false.
++   !$omp threadprivate(host_harvest_active, host_coll_under_frac, host_agb_harvest)
++
++   ! RHESSys host patch (rhessys_host_leaf_export, 2026-10-19): share of a site's fresh leaf
++   ! litter (leaf turnover incl. the deciduous leaf drop, leaves of plants dying outside
++   ! disturbance) that the host takes out of FATES before it enters the leaf litter pool, e.g.
++   ! the leaves of a stream-side site that fall into the channel. Set by the host for the site
++   ! being processed before ed_ecosystem_dynamics; the amounts come back in host_leaf_export
++   ! (kg/m2 of site/day: 1 C, 2 N, 3 labile C, 4 labile N, summed over the day's calls) and are
++   ! booked as a flux out of the site together with fragmentation (mass_balance frag_out).
++   ! 0 = stock FATES.
++   real(r8), public :: host_leaf_export_frac = 0._r8
++   real(r8), public :: host_leaf_export(4) = 0._r8
++   !$omp threadprivate(host_leaf_export_frac, host_leaf_export)
++
++   ! RHESSys host patch (rhessys_host_litter_passthrough, 2026-10-19): when the host sets this
++   ! for the site being processed, CWDOut releases all fine litter (leaf fines and fine-root
++   ! fines in the active decomposition layers: the pool plus today's input) to the host the same
++   ! day instead of at fates_frag_maxdecomp, so the host's own litter model decomposes it from
++   ! litterfall on. Coarse woody debris still fragments at fates_frag_maxdecomp.
++   ! .false. = stock FATES.
++   logical, public :: host_litter_passthrough = .false.
++   !$omp threadprivate(host_litter_passthrough)
+                                         ! performed during the current time-step
+ 
+    logical, parameter :: debug = .false.
+@@ -102,6 +157,8 @@ module EDLoggingMortalityMod
+          __FILE__
+    
+    public :: LoggingMortality_frac
++   public :: coll_under_frac_eff
++   public :: export_frac_eff, agb_export_on
+    public :: logging_litter_fluxes
+    public :: logging_time
+    public :: IsItLoggingTime
+@@ -113,6 +170,28 @@ module EDLoggingMortalityMod
+ 
+ contains
+ 
++   ! RHESSys host patch: wood-product export fraction of directly logged trunks
++   real(r8) function export_frac_eff()
++      if (agb_export_on()) then
++         export_frac_eff = 1.0_r8
++      else
++         export_frac_eff = logging_export_frac
++      end if
++   end function export_frac_eff
++
++   logical function agb_export_on()
++      agb_export_on = host_harvest_active .and. host_agb_harvest
++   end function agb_export_on
++
++   ! RHESSys host patch: understory death fraction under removed crowns
++   real(r8) function coll_under_frac_eff()
++      if (host_harvest_active .and. host_coll_under_frac >= 0.0_r8) then
++         coll_under_frac_eff = host_coll_under_frac
++      else
++         coll_under_frac_eff = logging_coll_under_frac
++      end if
++   end function coll_under_frac_eff
++
+    subroutine IsItLoggingTime(is_master,currentSite)
+ 
+       ! -------------------------------------------------------------------------------
+@@ -137,6 +216,12 @@ contains
+       ! this is true for either hlm harvest or fates logging
+       if(hlm_use_logging.eq.ifalse) return
+ 
++      ! RHESSys host patch: host-scheduled event for this site
++      if(host_logging_trigger) then
++         logging_time = .true.
++         return
++      end if
++
+       ! all of these are valid for hlm harvest
+       ! so adjust annual harvest inputs accordingly in LoggingMortality_frac
+       ! note that the specific event will allow only one hlm harvest, regardless of input
+@@ -925,7 +1010,7 @@ contains
+ 
+                if(prt_params%woody(pft) == itrue) then
+                   direct_dead   = 0.0_r8
+-                  indirect_dead = logging_coll_under_frac * &
++                  indirect_dead = coll_under_frac_eff() * &
+                        (1._r8-currentPatch%fract_ldist_not_harvested) * currentCohort%n * &
+                        (patch_site_areadis/currentPatch%area)   !kgC/site/day
+                else
+@@ -962,6 +1047,17 @@ contains
+ 	
+ 	    !adjust how wood is partitioned between the cwd classes based on cohort dbh
+             call adjust_SF_CWD_frac(currentCohort%dbh,ncwd,SF_val_CWD_frac,SF_val_CWD_frac_adj) 
++            ! RHESSys host patch: whole-AGB harvest exports the branches of directly
++            ! logged trees (only the indirectly killed go to CWD)
++            if (agb_export_on()) then
++               do c = 1,ncwd-1
++                  site_mass%wood_product_harvest(pft) = site_mass%wood_product_harvest(pft) + &
++                       direct_dead * (struct_m + sapw_m) * &
++                       prt_params%allom_agb_frac(currentCohort%pft) * SF_val_CWD_frac_adj(c)
++               end do
++               ag_wood = indirect_dead * (struct_m + sapw_m ) * &
++                    prt_params%allom_agb_frac(currentCohort%pft)
++            end if
+             
+ 	    do c = 1,ncwd-1
+                
+@@ -1069,17 +1165,17 @@ contains
+                   SF_val_CWD_frac_adj(ncwd)
+ 
+             trunk_product_site = trunk_product_site + &
+-                  ag_wood * logging_export_frac
++                  ag_wood * export_frac_eff()
+ 
+             ! This is for checking the total mass balance [kg/site/day]
+             site_mass%wood_product_harvest(pft) = site_mass%wood_product_harvest(pft) + &
+-                  ag_wood * logging_export_frac
++                  ag_wood * export_frac_eff()
+ 
+             new_litt%ag_cwd(ncwd) = new_litt%ag_cwd(ncwd) + ag_wood * &
+-                  (1._r8-logging_export_frac)*donate_m2
++                  (1._r8-export_frac_eff())*donate_m2
+             
+             cur_litt%ag_cwd(ncwd) = cur_litt%ag_cwd(ncwd) + ag_wood * &
+-                  (1._r8-logging_export_frac)*retain_m2
++                  (1._r8-export_frac_eff())*retain_m2
+ 
+             ! ---------------------------------------------------------------------------
+             ! Handle fluxes of leaf, root and storage carbon into litter pools. 
+--- a/biogeochem/EDMortalityFunctionsMod.F90
++++ b/biogeochem/EDMortalityFunctionsMod.F90
+@@ -29,6 +29,7 @@ module EDMortalityFunctionsMod
+    use FatesInterfaceTypesMod     , only : hlm_use_planthydro
+    use FatesInterfaceTypesMod     , only : hlm_use_tree_damage
+    use EDLoggingMortalityMod , only : LoggingMortality_frac
++   use EDLoggingMortalityMod , only : host_harvest_active, host_harvest_override   ! RHESSys host patch
+    use EDParamsMod           , only : mortality_disturbance_fraction
+    use FatesConstantsMod     , only : n_landuse_cats
+    use PRTGenericMod,          only : carbon12_element
+@@ -349,6 +350,10 @@ contains
+                                land_use_label, &
+                                age_since_anthro_disturbance, &
+                                current_fates_landuse_state_vector, harvestable_forest_c, harvest_tag)
++    ! RHESSys host patch: host-specified per-cohort logging rates
++    if (host_harvest_active .and. associated(host_harvest_override)) &
++         call host_harvest_override(currentSite, currentCohort, currentCohort%lmort_direct, &
++         currentCohort%lmort_collateral, currentCohort%lmort_infra, currentCohort%l_degrad)
+ 
+     if (currentCohort%canopy_layer > 1)then 
+        ! Include understory logging mortality rates not associated with disturbance
+--- a/biogeochem/EDPatchDynamicsMod.F90
++++ b/biogeochem/EDPatchDynamicsMod.F90
+@@ -70,6 +70,8 @@ module EDPatchDynamicsMod
+   use EDLoggingMortalityMod, only : get_harvest_rate_carbon
+   use EDLoggingMortalityMod, only : get_harvestable_carbon
+   use EDLoggingMortalityMod, only : get_harvest_debt
++  use EDLoggingMortalityMod, only : host_harvest_active, host_harvest_override   ! RHESSys host patch
++  use EDLoggingMortalityMod, only : coll_under_frac_eff                          ! RHESSys host patch
+   use FatesLandUseChangeMod, only : GetInitLanduseHarvestRate
+   use EDParamsMod          , only : mortality_disturbance_fraction
+   use FatesAllometryMod    , only : carea_allom
+@@ -279,6 +281,10 @@ contains
+           currentCohort%lmort_collateral = lmort_collateral
+           currentCohort%lmort_infra      = lmort_infra
+           currentCohort%l_degrad         = l_degrad
++          ! RHESSys host patch: host-specified per-cohort logging rates
++          if (host_harvest_active .and. associated(host_harvest_override)) &
++               call host_harvest_override(site_in, currentCohort, currentCohort%lmort_direct, &
++               currentCohort%lmort_collateral, currentCohort%lmort_infra, currentCohort%l_degrad)
+ 
+           currentCohort => currentCohort%taller
+        end do
+@@ -389,7 +395,8 @@ contains
+ 
+        ! for non-closed-canopy areas subject to logging, add an additional increment of area disturbed
+        ! equivalent to the fraction logged to account for transfer of interstitial ground area to new secondary lands
+-       if ( (logging_time .or. site_in%transition_landuse_from_off_to_on .or. site_secondaryland_first_exceeding_min) .and. &
++       if ( ((logging_time .and. .not. host_harvest_active) .or. &   ! RHESSys host patch
++            site_in%transition_landuse_from_off_to_on .or. site_secondaryland_first_exceeding_min) .and. &
+             (currentPatch%area - currentPatch%total_canopy_area) .gt. fates_tiny ) then
+           ! The canopy is NOT closed. 
+ 
+@@ -502,7 +509,7 @@ contains
+     !
+     ! !USES:
+ 
+-    use EDParamsMod          , only : ED_val_understorey_death, logging_coll_under_frac
++    use EDParamsMod          , only : ED_val_understorey_death
+     use EDCohortDynamicsMod  , only : terminate_cohorts
+     use FatesConstantsMod    , only : rsnbl_math_prec
+     use FatesLandUseChangeMod, only : GetLanduseChangeRules
+@@ -1234,18 +1241,18 @@ contains
+                                         currentSite%imort_rate(currentCohort%size_class, currentCohort%pft) = &
+                                              currentSite%imort_rate(currentCohort%size_class, currentCohort%pft) + &
+                                              nc%n * currentPatch%fract_ldist_not_harvested * &
+-                                             logging_coll_under_frac / hlm_freq_day
++                                             coll_under_frac_eff() / hlm_freq_day
+ 
+                                         currentSite%imort_carbonflux(currentCohort%pft) = &
+                                              currentSite%imort_carbonflux(currentCohort%pft) + &
+                                              (nc%n * currentPatch%fract_ldist_not_harvested * &
+-                                             logging_coll_under_frac/ hlm_freq_day ) * &
++                                             coll_under_frac_eff()/ hlm_freq_day ) * &
+                                              total_c * g_per_kg * days_per_sec * years_per_day * ha_per_m2
+ 
+                                         currentSite%imort_abg_flux(currentCohort%size_class, currentCohort%pft) = &
+                                              currentSite%imort_abg_flux(currentCohort%size_class, currentCohort%pft) + &
+                                              (nc%n * currentPatch%fract_ldist_not_harvested * &
+-                                             logging_coll_under_frac/ hlm_freq_day ) * &
++                                             coll_under_frac_eff()/ hlm_freq_day ) * &
+                                              ( ( sapw_c + struct_c + store_c) * prt_params%allom_agb_frac(currentCohort%pft) + &
+                                              leaf_c ) * days_per_sec * years_per_day * ha_per_m2
+ 
+@@ -1256,7 +1263,7 @@ contains
+                                         ! LOGGING SURVIVORSHIP OF UNDERSTORY PLANTS IS SET AS A NEW PARAMETER
+                                         ! in the fatesparameter files
+                                         nc%n = nc%n * (1.0_r8 - &
+-                                             (1.0_r8-currentPatch%fract_ldist_not_harvested) * logging_coll_under_frac)
++                                             (1.0_r8-currentPatch%fract_ldist_not_harvested) * coll_under_frac_eff())
+ 
+                                         ! Step 3: Reduce the number count of cohorts in the
+                                         !         original/donor/non-disturbed patch to reflect the area change
+--- a/biogeochem/EDPhysiologyMod.F90
++++ b/biogeochem/EDPhysiologyMod.F90
+@@ -98,6 +98,10 @@ module EDPhysiologyMod
+   use EDParamsMod           , only : q10_mr
+   use EDParamsMod           , only : q10_froz
+   use EDParamsMod           , only : logging_export_frac
++  use EDLoggingMortalityMod , only : export_frac_eff, agb_export_on   ! RHESSys host patch
++  use EDLoggingMortalityMod , only : host_leaf_export_frac, host_leaf_export   ! RHESSys host patch
++  use EDLoggingMortalityMod , only : host_litter_passthrough   ! RHESSys host patch
++  use PRTGenericMod         , only : carbon12_element, nitrogen_element
+   use EDParamsMod           , only : sdlng_mort_par_timescale
+   use FatesPlantHydraulicsMod  , only : AccumulateMortalityWaterStorage
+   use FatesConstantsMod     , only : itrue,ifalse
+@@ -455,6 +459,7 @@ contains
+     ! !LOCAL VARIABLES:
+ 
+     integer :: el                          ! Litter element loop index
++    real(r8) :: ex_tot, ex_lab             ! RHESSys host patch: leaf litter exported (kg/m2/day)
+     integer :: nlev_eff_decomp             ! Number of active layers over which
+     ! fragmentation fluxes are transfered
+     !------------------------------------------------------------------------------------
+@@ -481,6 +486,22 @@ contains
+          ! as litter fluxes from live trees
+          call CWDInput(currentSite, currentPatch, litt,bc_in)
+ 
++         ! RHESSys host patch: divert the host's share of today's fresh leaf litter
++         ! (kg/m2 of patch/day) out of FATES; it leaves the site like fragmentation
++         if (host_leaf_export_frac > 0._r8) then
++            ex_tot = host_leaf_export_frac * sum(litt%leaf_fines_in(:))
++            ex_lab = host_leaf_export_frac * litt%leaf_fines_in(ilabile)
++            litt%leaf_fines_in(:) = litt%leaf_fines_in(:) * (1._r8 - host_leaf_export_frac)
++            site_mass%frag_out = site_mass%frag_out + currentPatch%area * ex_tot
++            if (element_list(el) == carbon12_element) then
++               host_leaf_export(1) = host_leaf_export(1) + ex_tot * currentPatch%area * area_inv
++               host_leaf_export(3) = host_leaf_export(3) + ex_lab * currentPatch%area * area_inv
++            else if (element_list(el) == nitrogen_element) then
++               host_leaf_export(2) = host_leaf_export(2) + ex_tot * currentPatch%area * area_inv
++               host_leaf_export(4) = host_leaf_export(4) + ex_lab * currentPatch%area * area_inv
++            end if
++         end if
++
+          ! Only calculate fragmentation flux over layers that are active
+          ! (RGK-Mar2019) SHOULD WE MAX THIS AT 1? DONT HAVE TO
+ 
+@@ -1031,7 +1052,12 @@ contains
+     !
+     ! accumulate the GDD using daily mean temperatures
+     ! Don't accumulate GDD during the growing season (that wouldn't make sense)
+-    if (temp_in_C .gt. 0._r8 .and. currentSite%cstatus == phen_cstat_iscold) then
++    ! RHESSys host patch: also accumulate in the never-cold state. The 400-day lifespan
++    ! rule below sets phen_cstat_nevercold when a cold leaf-off comes more than 400 days
++    ! after the previous one (a late autumn); leaf-on accepts that state, but without GDD
++    ! accumulation the site never reached the threshold and stayed leafless for good.
++    if (temp_in_C .gt. 0._r8 .and. &
++        any(currentSite%cstatus == [phen_cstat_iscold,phen_cstat_nevercold])) then
+        currentSite%grow_deg_days = currentSite%grow_deg_days + temp_in_C
+     endif
+ 
+@@ -3031,16 +3057,16 @@ contains
+                   prt_params%allom_agb_frac(pft)
+ 
+              site_mass%wood_product_harvest(pft) = site_mass%wood_product_harvest(pft) + &
+-                  trunk_wood * currentPatch%area * logging_export_frac
++                  trunk_wood * currentPatch%area * export_frac_eff()
+ 
+              ! Add AG wood to litter from the non-exported fraction of wood
+              ! from direct anthro sources
+ 
+              litt%ag_cwd_in(c) = litt%ag_cwd_in(c) +  &
+-                  trunk_wood * (1._r8-logging_export_frac)
++                  trunk_wood * (1._r8-export_frac_eff())
+ 
+              elflux_diags%cwd_ag_input(c)  = elflux_diags%cwd_ag_input(c) + &
+-                  trunk_wood * (1._r8-logging_export_frac) * currentPatch%area
++                  trunk_wood * (1._r8-export_frac_eff()) * currentPatch%area
+ 
+              ! Add AG wood to litter from indirect anthro sources
+ 
+@@ -3052,6 +3078,18 @@ contains
+                   (struct_m + sapw_m) * SF_val_CWD_frac_adj(c) * (dead_n_natural+dead_n_ilogging) * &
+                   currentPatch%area * prt_params%allom_agb_frac(pft)
+ 
++          else if (agb_export_on()) then
++             ! RHESSys host patch: whole-AGB harvest exports the branches of directly
++             ! logged (understory) trees
++             site_mass%wood_product_harvest(pft) = site_mass%wood_product_harvest(pft) + &
++                  (struct_m + sapw_m) * SF_val_CWD_frac_adj(c) * dead_n_dlogging * &
++                  prt_params%allom_agb_frac(pft) * currentPatch%area
++             litt%ag_cwd_in(c) = litt%ag_cwd_in(c) + (struct_m + sapw_m) * &
++                  SF_val_CWD_frac_adj(c) * (dead_n - dead_n_dlogging) * &
++                  prt_params%allom_agb_frac(pft)
++             elflux_diags%cwd_ag_input(c)  = elflux_diags%cwd_ag_input(c) + &
++                  SF_val_CWD_frac_adj(c) * (dead_n - dead_n_dlogging) * (struct_m + sapw_m) * &
++                  currentPatch%area * prt_params%allom_agb_frac(pft)
+           else
+ 
+              litt%ag_cwd_in(c) = litt%ag_cwd_in(c) + (struct_m + sapw_m) * &
+@@ -3234,6 +3272,16 @@ contains
+ 
+     do dcmpy = 1,ndcmpy
+ 
++       if (host_litter_passthrough) then
++          ! RHESSys host patch: all fine litter (pool + today's input) to the host today
++          litt%leaf_fines_frag(dcmpy) = litt%leaf_fines(dcmpy) + litt%leaf_fines_in(dcmpy)
++          do ilyr = 1,nlev_eff_decomp
++             litt%root_fines_frag(dcmpy,ilyr) = litt%root_fines(dcmpy,ilyr) + &
++                  litt%root_fines_in(dcmpy,ilyr)
++          end do
++          cycle
++       end if
++
+        litt%leaf_fines_frag(dcmpy) = litt%leaf_fines(dcmpy) * &
+              years_per_day * SF_val_max_decomp(fuel_classes%dead_leaves()) * fragmentation_scaler(soil_layer_index)
+ 

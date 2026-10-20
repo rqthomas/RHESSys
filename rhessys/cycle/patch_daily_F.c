@@ -435,6 +435,7 @@ void		patch_daily_F(
 		double,
 		double,
 		double,
+		double,
 		double);
 
 	int	update_denitrif(
@@ -2587,7 +2588,8 @@ void		patch_daily_F(
 			patch[0].Tsoil,
 			patch[0].soil_defaults[0][0].porosity_0,
 			0.25,
-			patch[0].soil_defaults[0][0].nitrif_proportion,patch[0].theta_std) != 0){
+			patch[0].soil_defaults[0][0].nitrif_proportion,
+			patch[0].soil_defaults[0][0].nitrif_NH4_coef, patch[0].theta_std) != 0){
 			fprintf(stderr,"fATAL ERROR: in update_nitrific() ... Exiting\n");
 			exit(EXIT_FAILURE);
 		}

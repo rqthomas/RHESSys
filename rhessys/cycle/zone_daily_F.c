@@ -127,6 +127,7 @@
 #include "rhessys_veg.h"
 #include "phys_constants.h"
 #include "functions.h"
+#define ZONE_RH_MIN 0.01	/* minimum zone relative humidity when vpd is input */
 
 
 void		zone_daily_F(
@@ -525,7 +526,50 @@ void		zone_daily_F(
 	/* for snowpack sublim and RH for output.						*/
 	else {
 		double es = compute_saturation_vapor_pressure(zone[0].metv.tavg);
-		zone[0].e_dewpoint = es - zone[0].metv.vpd;
+		if (zone[0].defaults[0][0].vpd_dewpoint_lapse == 1) {
+			/*--------------------------------------------------------------*/
+			/* Input vpd is a base-station value; temperature is lapsed to	*/
+			/* the zone but vpd is not, so carry the station's vapour	*/
+			/* pressure to the zone through its dewpoint instead:		*/
+			/*   e_b = es(T_b) - vpd,  Td_b = es^-1(e_b),			*/
+			/*   Td_z = Td_b - dewpoint_lapse_rate * (z_zone - z_station),	*/
+			/*   e_z = min(es(Td_z), es(T_z)),  vpd_z = es(T_z) - e_z	*/
+			/* (the same dewpoint lapse RHESSys applies to dewpoint	*/
+			/* input; T_b = zone tavg + the temperature lapse applied today).*/
+			/* Set vpd_dewpoint_lapse 0 in the zone def for the old		*/
+			/* behaviour (station vpd used unchanged at every zone).	*/
+			/*--------------------------------------------------------------*/
+			double es_b = compute_saturation_vapor_pressure(zone[0].metv.tavg + zone[0].vpd_tlapse);
+			double e_b = es_b - zone[0].metv.vpd;
+			double x, td_b, td_z, e_z;
+			if (e_b < ZONE_RH_MIN * es_b) e_b = ZONE_RH_MIN * es_b;	/* station vpd > es(T_b): floor */
+			x = log(e_b / 613.75);					/* invert es = 613.75 exp(17.502 T / (240.97 + T)) */
+			td_b = 240.97 * x / (17.502 - x);
+			td_z = td_b - zone[0].defaults[0][0].dewpoint_lapse_rate * zone[0].vpd_zdelta;
+			e_z = compute_saturation_vapor_pressure(td_z);
+			if (e_z > es) e_z = es;					/* dewpoint above air temperature: saturated */
+			zone[0].e_dewpoint = e_z;
+			zone[0].metv.vpd = es - e_z;
+		}
+		else
+			zone[0].e_dewpoint = es - zone[0].metv.vpd;
+		/*--------------------------------------------------------------*/
+		/* Safety floor: vapour pressure at least ZONE_RH_MIN of	*/
+		/* saturation (with vpd_dewpoint_lapse 0, an unlapsed vpd can	*/
+		/* exceed es(tavg) on cold days at high zones, giving negative	*/
+		/* humidity and NaN longwave, which uses sqrt(e_dewpoint)).	*/
+		/*--------------------------------------------------------------*/
+		if (zone[0].e_dewpoint < ZONE_RH_MIN * es) {
+			static int warned = 0;
+			if (!warned) {
+				fprintf(stderr, "NOTE: zone %d day vpd %.1f Pa > saturation %.1f Pa at tavg %.2f C; "
+					"vapour pressure floored at %.0f%% of saturation (reported once)\n",
+					zone[0].ID, zone[0].metv.vpd, es, zone[0].metv.tavg, 100.0 * ZONE_RH_MIN);
+				warned = 1;
+			}
+			zone[0].e_dewpoint = ZONE_RH_MIN * es;
+			zone[0].metv.vpd = es - zone[0].e_dewpoint;
+		}
 		zone[0].relative_humidity = zone[0].e_dewpoint / es;
 	}
 	/*-------------------------------------------------------------------*/

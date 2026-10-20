@@ -78,14 +78,14 @@ endif
 # RHESSys = host, vegetation = pluggable backend (design doc 9.2, Phase 0).
 # The selector (fates/rhessys_veg.o) is ALWAYS built; the Fortran binding
 # (fates/rhessys_fates.o) + libfates link only when fates is defined.
-# libfates is built outside this repo from the pinned FATES tag
-# (RHESSys_development/fates: cmake -S . -B build); override FATES_DIR to move it.
+# libfates is built outside this repo from the pinned FATES tag, in fates_lib/ next to
+# this repo (<parent>/fates_lib: cmake -S . -B build); override FATES_DIR to move it.
 ifdef fates
   DEFINES += -DFATES
   ifeq ($(origin FC),default)
     FC = gfortran
   endif
-  FATES_DIR ?= ../../fates/build
+  FATES_DIR ?= ../../fates_lib/build
   FATES_INC ?= $(FATES_DIR)/mod
   FATES_LIB ?= $(FATES_DIR)/lib
   FFLAGS = -g -O2 -cpp -ffree-line-length-none -fopenmp -I$(FATES_INC)

@@ -49,8 +49,9 @@ module rhessys_fates
    use PRTParametersMod,     only : prt_params
    use PRTGenericMod,        only : leaf_organ, fnrt_organ, carbon12_element, &
                                     carbon_nitrogen_phosphorus
-   use PRTGenericMod,        only : sapw_organ, struct_organ, store_organ, repro_organ
-   use FatesInterfaceTypesMod,only: hlm_current_year
+   use PRTGenericMod,        only : sapw_organ, struct_organ, store_organ, repro_organ, nitrogen_element
+   use PRTAllometricCNPMod,  only : stoich_growth_min, stoich_max
+   use FatesInterfaceTypesMod,only: hlm_current_year, hlm_current_month
    use FatesConstantsMod,    only : i_term_mort_type_cstarv, i_term_mort_type_canlev, &
                                     i_term_mort_type_numdens
    use EDPftvarcon,          only : EDPftvarcon_inst
@@ -60,6 +61,8 @@ module rhessys_fates
    use FatesInterfaceTypesMod, only : fates_maxElementsPerSite
    use EDParamsMod,          only : ED_val_cwd_fcel, ED_val_cwd_flig
    use EDLoggingMortalityMod, only : host_logging_trigger    ! local FATES patch (fates/patches)
+   use EDLoggingMortalityMod, only : host_leaf_export_frac, host_leaf_export   ! local FATES patch
+   use EDLoggingMortalityMod, only : host_litter_passthrough                    ! local FATES patch
    use EDTypesMod,           only : area_inv
    use rhessys_fates_mgmt,   only : mgmt_init, mgmt_pre, mgmt_post, mgmt_write_day, mgmt_summary
    use FatesPatchMod,        only : fates_patch_type
@@ -143,16 +146,38 @@ module rhessys_fates
 
    ! Plant N demand handed to RHESSys's soil competition (mode 3):
    !   0 = RD uptake capacity only: fine-root C x (Vmax NH4 + Vmax NO3)
+   ! A bit mask: bit 1 (value 1) = growth-based (-demog_nneed), bit 2 (value 2) = store-regulated
+   ! (-demog_nstore_reg); both can be set.
    !   1 = growth-based (-demog_nneed): per cohort max(capacity, potential growth N need),
    !       need = potential C gain (GPP - maintenance resp, less growth resp) x tissue N:C,
    !       as legacy RHESSys sets plant demand from potential growth. The same weights
    !       share the granted N among cohorts.
+   !   2 = store-regulated (-demog_nstore_reg): the claim times the cohort's room in its N store,
+   !       max(0, 1 - N store / N store maximum), maximum = FATES's overflow level, target x
+   !       (1 + fates_cnp_store_ovrflw_frac) (target = fates_cnp_nitr_store_ratio x full-leaf N), so cohorts
+   !       with full N stores stop competing with soil microbes for mineral N. Not the target itself:
+   !       FATES refills storage (allocation priority 2) before sapwood and structure, so a plant held at
+   !       its store target gets no N for stature growth.
    integer, save :: ndemand_mode = 0
 
    ! litter C handed to the host today by FATES source (gC/m2/day), per site:
    ! 1 leaf fines, 2 seeds, 3 above-ground CWD, 4 fine roots, 5 below-ground CWD;
    ! 6-10 the same for N (gN/m2/day, mode 3)
    real(r8), allocatable, save :: lit_src(:,:)
+
+   ! stream-side sites (local FATES patch, host_leaf_export): share of each site's fresh leaf
+   ! litter that falls into the channel, set by the host; today's amount taken out of FATES,
+   ! (4, site) in g/m2/day: C, N, labile C, labile N
+   real(r8), allocatable, save :: leaf_exp_frac(:)
+   real(r8), allocatable, save :: leaf_exp(:,:)
+
+   ! -demog_litter_direct: FATES hands all fine litter to the host on the day it falls (local
+   ! FATES patch, host_litter_passthrough), and the host files it into its litter pools with
+   ! the legacy rules. lit_dc: today's litter to the host by decomposability class (1 labile,
+   ! 2 cellulose, 3 lignin), source (1 leaf fines, 2 seeds, 3 above-ground CWD, 4 fine-root
+   ! fines, 5 below-ground CWD) and element (1 C, 2 N), per site (g/m2/day)
+   logical, save :: litter_direct = .false.
+   real(r8), allocatable, save :: lit_dc(:,:,:,:)
 
    ! per-patch inventories: inventory index (0-based) of each site, cold start only
    integer, allocatable, save :: inv_idx(:)
@@ -161,11 +186,24 @@ module rhessys_fates
    ! (unweighted over sites) stems, biomass, NPP, C lost per mortality mechanism,
    ! termination and impact mortality, by PFT x canopy layer (1 canopy, 2 understory).
    integer, parameter :: nmd = 21
+   integer, parameter :: n_aorg = 6
+   integer, parameter :: aorg(n_aorg) = [leaf_organ, fnrt_organ, sapw_organ, struct_organ, store_organ, repro_organ]
    character(len=1024), save :: mort_file = ''
    logical, save :: mort_first = .true.
    integer, save :: mort_year = -1, mort_ndays = 0
    real(r8), allocatable, save :: mort_acc(:,:,:)      ! (nmd, pft, layer)
    real(r8), allocatable, save :: term_base(:,:,:)     ! (3 types + imort, pft, layer) cumulative at year start
+   ! Annual organ C budget (<output prefix>_fates_alloc.csv), site mean by PFT, organs leaf, fine
+   ! root, sapwood, structure, storage, reproduction: production = stock change + turnover + C lost
+   ! with dying plants (cohort mortality rates; termination and impact mortality are whole-plant and
+   ! reported separately), i.e. the year's growth per organ, comparable with legacy RHESSys allocation.
+   character(len=1024), save :: alloc_file = ''
+   logical, save :: alloc_first = .true.
+   integer, save :: alloc_jul_days = 0
+   real(r8), allocatable, save :: alloc_acc(:,:,:)     ! (1 turnover, 2 mortality loss; organ; pft), kgC/m2 summed over sites
+   real(r8), allocatable, save :: alloc_stock0(:,:)    ! (organ, pft) stocks at year start, summed over sites
+   real(r8), allocatable, save :: alloc_jul(:,:)       ! (1 leaf area, 2 leaf C; pft) July sums over sites and days
+   real(r8), allocatable, save :: alloc_nst(:,:)       ! (1 N store, 2 FATES N store target; pft) sums over sites and days (CNP)
 
    ! Codes FATES keeps private (LeafBiophysicsMod) -- values verified at the tag.
    integer, parameter :: ballberry_model = 1   ! stomatal_model
@@ -230,8 +268,10 @@ subroutine rhessys_veg_init(c_paramfile, pf_len, c_invfile, inv_len, c_logfile, 
    i = index(logfile, '_fates.log', back=.true.)
    if (i > 0) then
       mort_file = logfile(1:i-1)//'_fates_mort.csv'
+      alloc_file = logfile(1:i-1)//'_fates_alloc.csv'
    else
       mort_file = trim(logfile)//'_mort.csv'
+      alloc_file = trim(logfile)//'_alloc.csv'
    end if
    call FatesInterfaceInit(fates_log_unit, .false.)
 
@@ -789,7 +829,15 @@ subroutine rhessys_veg_do(site, bc, out) bind(C, name=_VEG_DO)
    ! Phase 6: host-imposed fire / harvest for today (always resets yesterday's)
    call apply_disturbance(s, bc)
    if (cnp_coupled) call mgmt_pre(fates%sites(s), s, nint(bc%dist_kind), bc%thin_frac)
+   ! stream-side site: FATES diverts this share of today's fresh leaf litter to the host
+   host_leaf_export(:) = 0.0_r8
+   host_leaf_export_frac = 0.0_r8
+   if (allocated(leaf_exp_frac)) host_leaf_export_frac = leaf_exp_frac(s)
+   host_litter_passthrough = litter_direct
    call ed_ecosystem_dynamics(fates%sites(s), fates%bc_in(s), fates%bc_out(s))
+   if (allocated(leaf_exp)) leaf_exp(:, s) = host_leaf_export(:) * 1000.0_r8   ! kg -> g /m2/day
+   host_leaf_export_frac = 0.0_r8
+   host_litter_passthrough = .false.
    if (cnp_coupled) call mgmt_post(fates%sites(s), s, fates%bc_in(s))
    call ed_update_site(fates%sites(s), fates%bc_in(s), fates%bc_out(s), is_restarting=.false.)
    call UpdateFatesAvgSnowDepth(fates%sites(s:s), fates%bc_in(s:s))
@@ -866,6 +914,75 @@ subroutine mort_term_cum(nsites, cum)
    end do
 end subroutine mort_term_cum
 
+subroutine alloc_stocks(nsites, stock)
+   ! organ C stocks by PFT, kgC per m2 of site, summed over sites
+   integer,  intent(in)  :: nsites
+   real(r8), intent(out) :: stock(n_aorg, numpft)
+   type(fates_patch_type),  pointer :: cpatch
+   type(fates_cohort_type), pointer :: ccohort
+   integer :: s, io
+   stock = 0.0_r8
+   do s = 1, nsites
+      cpatch => fates%sites(s)%oldest_patch
+      do while (associated(cpatch))
+         ccohort => cpatch%tallest
+         do while (associated(ccohort))
+            do io = 1, n_aorg
+               stock(io, ccohort%pft) = stock(io, ccohort%pft) + &
+                    ccohort%n * area_inv * ccohort%prt%GetState(aorg(io), carbon12_element)
+            end do
+            ccohort => ccohort%shorter
+         end do
+         cpatch => cpatch%younger
+      end do
+   end do
+end subroutine alloc_stocks
+
+subroutine alloc_write(nsites)
+   ! one row per PFT: site-mean organ budget over the accumulation period (kgC/m2, not annualised),
+   ! NPP and C efflux over the period, whole-plant termination + impact mortality C, July means of
+   ! leaf area and leaf C (legacy proj_sla = lai_jul / leafc_jul), and (CNP) the period-mean N store and
+   ! FATES's N store target (fates_cnp_nitr_store_ratio x full-leaf N), gN per m2 of site
+   integer, intent(in) :: nsites
+   real(r8) :: stock1(n_aorg, numpft), cum(4, numpft, 2), r, npp, eff, wpm, ds, p
+   integer :: u, ft, io
+   character(len=6), parameter :: oname(n_aorg) = ['leaf  ', 'fnrt  ', 'sapw  ', 'struct', 'store ', 'repro ']
+   character(len=2048) :: hdr
+   if (len_trim(alloc_file) == 0 .or. mort_ndays == 0) return
+   call alloc_stocks(nsites, stock1)
+   call mort_term_cum(nsites, cum)
+   r = 1.0_r8 / real(nsites, r8)
+   if (alloc_first) then
+      hdr = 'year,ndays,pft'
+      do io = 1, n_aorg
+         hdr = trim(hdr)//','//trim(oname(io))//'_stock,'//trim(oname(io))//'_dstock,'//trim(oname(io))// &
+               '_turnover,'//trim(oname(io))//'_mortloss,'//trim(oname(io))//'_production'
+      end do
+      hdr = trim(hdr)//',npp,c_efflux,term_imort_c,lai_jul,leafc_jul,nstore_gN,nstore_target_gN'
+      open(newunit=u, file=trim(alloc_file), status='replace', action='write')
+      write(u,'(a)') trim(hdr)
+      alloc_first = .false.
+   else
+      open(newunit=u, file=trim(alloc_file), status='old', position='append', action='write')
+   end if
+   do ft = 1, numpft
+      npp = (mort_acc(3, ft, 1) + mort_acc(3, ft, 2)) * r
+      eff = (mort_acc(17, ft, 1) + mort_acc(17, ft, 2)) * r
+      wpm = sum(cum(1:4, ft, 1:2) - term_base(1:4, ft, 1:2)) * r
+      write(u,'(i0,",",i0,",",i0)', advance='no') mort_year, mort_ndays, ft
+      do io = 1, n_aorg
+         ds = (stock1(io, ft) - alloc_stock0(io, ft)) * r
+         p  = ds + (alloc_acc(1, io, ft) + alloc_acc(2, io, ft)) * r
+         write(u,'(5(",",es12.5))', advance='no') stock1(io, ft) * r, ds, alloc_acc(1, io, ft) * r, &
+              alloc_acc(2, io, ft) * r, p
+      end do
+      write(u,'(7(",",es12.5))') npp, eff, wpm, alloc_jul(1, ft) * r / max(alloc_jul_days, 1), &
+           alloc_jul(2, ft) * r / max(alloc_jul_days, 1), 1.0e3_r8 * alloc_nst(1, ft) * r / mort_ndays, &
+           1.0e3_r8 * alloc_nst(2, ft) * r / mort_ndays
+   end do
+   close(u)
+end subroutine alloc_write
+
 subroutine mort_write(nsites)
    integer, intent(in) :: nsites
    real(r8) :: cum(4, numpft, 2), d, fd
@@ -887,7 +1004,7 @@ subroutine mort_write(nsites)
    do ft = 1, numpft
       do il = 1, 2
          associate(a => mort_acc(:, ft, il))
-         write(u,'(i0,",",i0,",",i0,",",i0,22(",",es12.5))') mort_year, mort_ndays, ft, il, &
+         write(u,'(i0,",",i0,",",i0,",",i0,21(",",es12.5))') mort_year, mort_ndays, ft, il, &
               a(1)/d*1.0e4_r8, a(2)/d, a(3)*fd, a(4:10)*fd, &
               (cum(1:4,ft,il) - term_base(1:4,ft,il)) * fd, &
               a(11)/max(a(2),1.0e-30_r8), a(12)/max(a(14),1.0e-30_r8), a(13)/max(a(14),1.0e-30_r8), &
@@ -903,8 +1020,8 @@ subroutine mort_accumulate(nsites)
    integer, intent(in) :: nsites
    type(fates_patch_type),  pointer :: cpatch
    type(fates_cohort_type), pointer :: ccohort
-   real(r8) :: nm2, ctot, leafc, fnrtc, storec
-   integer  :: s, ft, il
+   real(r8) :: nm2, ctot, leafc, fnrtc, storec, mr
+   integer  :: s, ft, il, io
    real(r8) :: cum(4, numpft, 2)
 
    if (len_trim(mort_file) == 0) return
@@ -914,14 +1031,21 @@ subroutine mort_accumulate(nsites)
       call mort_term_cum(nsites, cum)
       term_base = cum
       mort_year = hlm_current_year
+      allocate(alloc_acc(2, n_aorg, numpft), alloc_stock0(n_aorg, numpft), alloc_jul(2, numpft), alloc_nst(2, numpft))
+      alloc_acc = 0.0_r8; alloc_jul = 0.0_r8; alloc_jul_days = 0; alloc_nst = 0.0_r8
+      call alloc_stocks(nsites, alloc_stock0)
    end if
    if (hlm_current_year /= mort_year) then
+      call alloc_write(nsites)          ! before mort_write, which moves term_base on
+      alloc_acc = 0.0_r8; alloc_jul = 0.0_r8; alloc_jul_days = 0; alloc_nst = 0.0_r8
+      call alloc_stocks(nsites, alloc_stock0)
       call mort_write(nsites)
       mort_acc = 0.0_r8
       mort_ndays = 0
       mort_year = hlm_current_year
    end if
    mort_ndays = mort_ndays + 1
+   if (hlm_current_month == 7) alloc_jul_days = alloc_jul_days + 1
    do s = 1, nsites
       cpatch => fates%sites(s)%oldest_patch
       do while (associated(cpatch))
@@ -954,6 +1078,22 @@ subroutine mort_accumulate(nsites)
             a(11) = a(11) + nm2 * storec
             a(14) = a(14) + nm2 * ctot
             a(18) = a(18) + nm2 * leafc
+            mr = 0.0_r8
+            if (.not. ccohort%isnew) mr = (fin(ccohort%bmort) + fin(ccohort%cmort) + fin(ccohort%hmort) + &
+                 fin(ccohort%frmort) + fin(ccohort%smort) + fin(ccohort%asmort) + fin(ccohort%dgmort)) / 365.0_r8
+            do io = 1, n_aorg
+               alloc_acc(1, io, ft) = alloc_acc(1, io, ft) + nm2 * fin(ccohort%prt%GetTurnover(aorg(io), carbon12_element))
+               alloc_acc(2, io, ft) = alloc_acc(2, io, ft) + nm2 * ccohort%prt%GetState(aorg(io), carbon12_element) * mr
+            end do
+            if (cnp_coupled) then
+               alloc_nst(1, ft) = alloc_nst(1, ft) + nm2 * ccohort%prt%GetState(store_organ, nitrogen_element)
+               alloc_nst(2, ft) = alloc_nst(2, ft) + nm2 * &
+                    ccohort%prt%GetNutrientTarget(nitrogen_element, store_organ, stoich_growth_min)
+            end if
+            if (hlm_current_month == 7) then
+               alloc_jul(1, ft) = alloc_jul(1, ft) + ccohort%treelai * ccohort%c_area * area_inv
+               alloc_jul(2, ft) = alloc_jul(2, ft) + nm2 * leafc
+            end if
             if (cnp_coupled) then
                if (ccohort%cnp_limiter == 1) a(12) = a(12) + nm2 * ctot
                if (ccohort%cnp_limiter == 2) a(13) = a(13) + nm2 * ctot
@@ -983,13 +1123,13 @@ end subroutine mort_accumulate
 !-------------------------------------------------------------------------------
 subroutine rhessys_veg_set_ndemand(mode) bind(C, name='rhessys_veg_set_ndemand')
    integer(c_int), intent(in) :: mode
-   ! 1 = growth-based N demand / plant priority (-demog_nneed)
-   ndemand_mode = iand(int(mode), 1)
+   ! bit 1 = growth-based N demand / plant priority (-demog_nneed); bit 2 = store-regulated (-demog_nstore_reg)
+   ndemand_mode = iand(int(mode), 3)
 end subroutine rhessys_veg_set_ndemand
 
 !-------------------------------------------------------------------------------
-! A cohort's N uptake claim per plant (kgN/plant/s): RD capacity, or (mode 1) the
-! larger of capacity and potential growth N need
+! A cohort's N uptake claim per plant (kgN/plant/s): RD capacity, or (mode bit 1) the
+! larger of capacity and potential growth N need; (mode bit 2) times the cohort's N store room
 !-------------------------------------------------------------------------------
 real(r8) function n_claim(c)
    type(fates_cohort_type), pointer, intent(in) :: c
@@ -997,8 +1137,19 @@ real(r8) function n_claim(c)
    ft  = c%pft
    n_claim = c%prt%GetState(fnrt_organ, carbon12_element) * &
         (EDPftvarcon_inst%vmax_nh4(ft) + EDPftvarcon_inst%vmax_no3(ft))
-   if (ndemand_mode == 1) n_claim = max(n_claim, n_need(c))
+   if (iand(ndemand_mode, 1) == 1) n_claim = max(n_claim, n_need(c))
+   if (iand(ndemand_mode, 2) == 2) n_claim = n_claim * n_store_room(c)
 end function n_claim
+
+! room left in a cohort's N store, 0-1: max(0, 1 - N store / FATES's N store overflow level)
+real(r8) function n_store_room(c)
+   type(fates_cohort_type), pointer, intent(in) :: c
+   real(r8) :: tgt
+   n_store_room = 1.0_r8
+   if (.not. cnp_coupled) return
+   tgt = c%prt%GetNutrientTarget(nitrogen_element, store_organ, stoich_max)
+   if (tgt > 0.0_r8) n_store_room = min(1.0_r8, max(0.0_r8, 1.0_r8 - c%prt%GetState(store_organ, nitrogen_element) / tgt))
+end function n_store_room
 
 ! potential growth N need per plant (kgN/plant/s): potential C gain for growth
 ! (annualised GPP - maintenance resp, less growth resp) x tissue N:C at target
@@ -1080,7 +1231,7 @@ subroutine distribute_n_uptake(s, nh4, no3, recv)
             ccohort => cpatch%tallest
             do while (associated(ccohort))
                icomp = icomp + 1
-               if (ndemand_mode == 1) then
+               if (ndemand_mode /= 0) then
                   w = n_claim(ccohort) * ccohort%n
                else
                   w = ccohort%prt%GetState(fnrt_organ, carbon12_element) * ccohort%n * &
@@ -1118,7 +1269,7 @@ subroutine nutrient_out(s, out)
    do while (associated(cpatch))
       ccohort => cpatch%tallest
       do while (associated(ccohort))
-         if (ndemand_mode == 1) then
+         if (ndemand_mode /= 0) then
             out%ncap = out%ncap + n_claim(ccohort) * ccohort%n * area_inv * 1000.0_r8 * 86400.0_r8
          else
             out%ncap = out%ncap + ccohort%prt%GetState(fnrt_organ, carbon12_element) * &
@@ -1337,6 +1488,59 @@ subroutine rhessys_veg_litter_src(site, v) bind(C, name='rhessys_veg_litter_src'
 end subroutine rhessys_veg_litter_src
 
 !-------------------------------------------------------------------------------
+! -demog_litter_direct on (flag /= 0): FATES releases all fine litter to the host
+! on the day it falls (local FATES patch, host_litter_passthrough)
+!-------------------------------------------------------------------------------
+subroutine rhessys_veg_set_litter_direct(flag) bind(C, name='rhessys_veg_set_litter_direct')
+   integer(c_int), intent(in) :: flag
+   litter_direct = (flag /= 0)
+end subroutine rhessys_veg_set_litter_direct
+
+!-------------------------------------------------------------------------------
+! -demog_litter_direct: today's litter to the host (g/m2/day) by class (labile,
+! cellulose, lignin), source (leaf fines, seeds, AG CWD, fine-root fines, BG CWD)
+! and element (C, N): v(class + 3 (source - 1) + 15 (element - 1))
+!-------------------------------------------------------------------------------
+subroutine rhessys_veg_litter_dcmp(site, v) bind(C, name='rhessys_veg_litter_dcmp')
+   integer(c_int), intent(in)  :: site
+   real(c_double), intent(out) :: v(30)
+   v = 0.0_r8
+   if (.not. allocated(lit_dc)) return
+   if (site < 1 .or. site > fates%nsites) return
+   v = reshape(lit_dc(:, :, :, site), [30])
+end subroutine rhessys_veg_litter_dcmp
+
+!-------------------------------------------------------------------------------
+! Stream-side sites: share of the site's fresh leaf litter that falls into the
+! channel (RHESSys stream_litter_frac); FATES takes it out before its litter pools
+! (local FATES patch, host_leaf_export). Called by the host before the day's step.
+!-------------------------------------------------------------------------------
+subroutine rhessys_veg_set_leaf_export(site, frac) bind(C, name='rhessys_veg_set_leaf_export')
+   integer(c_int), intent(in) :: site
+   real(c_double), intent(in) :: frac
+   if (site < 1 .or. site > fates%nsites) return
+   if (.not. allocated(leaf_exp_frac)) then
+      if (frac <= 0.0_r8) return
+      allocate(leaf_exp_frac(fates%nsites), leaf_exp(4, fates%nsites))
+      leaf_exp_frac(:) = 0.0_r8
+      leaf_exp(:,:) = 0.0_r8
+   end if
+   leaf_exp_frac(site) = min(max(frac, 0.0_r8), 1.0_r8)
+end subroutine rhessys_veg_set_leaf_export
+
+!-------------------------------------------------------------------------------
+! Today's leaf litter taken out of FATES for the stream (g/m2/day): C, N, labile C, labile N
+!-------------------------------------------------------------------------------
+subroutine rhessys_veg_leaf_export(site, v) bind(C, name='rhessys_veg_leaf_export')
+   integer(c_int), intent(in)  :: site
+   real(c_double), intent(out) :: v(4)
+   v = 0.0_r8
+   if (.not. allocated(leaf_exp)) return
+   if (site < 1 .or. site > fates%nsites) return
+   v = leaf_exp(:, site)
+end subroutine rhessys_veg_leaf_export
+
+!-------------------------------------------------------------------------------
 ! FATES CWD fragmentation split into cellulose / lignin (fates_frag_cwd_fcel/flig)
 !-------------------------------------------------------------------------------
 subroutine rhessys_veg_cwd_frac(v) bind(C, name='rhessys_veg_cwd_frac')
@@ -1395,6 +1599,14 @@ subroutine litter_split(s, out)
       !$omp end critical (lit_src_alloc)
    end if
    lit_src(:, s) = 0.0_r8
+   if (litter_direct .and. .not. allocated(lit_dc)) then
+      !$omp critical (lit_dc_alloc)
+      if (.not. allocated(lit_dc)) then
+         allocate(lit_dc(3, 5, 2, fates%nsites)); lit_dc = 0.0_r8
+      end if
+      !$omp end critical (lit_dc_alloc)
+   end if
+   if (allocated(lit_dc)) lit_dc(:, :, :, s) = 0.0_r8
    ne = 1
    if (cnp_coupled) ne = 2
    nlev_eff = max(fates%bc_in(s)%max_rooting_depth_index_col, 1)
@@ -1425,6 +1637,22 @@ subroutine litter_split(s, out)
             blw(2,el) = blw(2,el) + litt%root_fines_frag(icellulose,j) * af
             blw(3,el) = blw(3,el) + litt%root_fines_frag(ilignin,j)    * af
          end do
+         if (allocated(lit_dc)) then          ! -demog_litter_direct: by source and class
+            lit_dc(:, 1, el, s) = lit_dc(:, 1, el, s) + litt%leaf_fines_frag(:) * af * 1000.0_r8
+            do ipft = 1, numpft
+               sd = (litt%seed_decay(ipft) + litt%seed_germ_decay(ipft)) * af * 1000.0_r8
+               lit_dc(1, 2, el, s) = lit_dc(1, 2, el, s) + sd * EDPftvarcon_inst%lf_flab(ipft)
+               lit_dc(2, 2, el, s) = lit_dc(2, 2, el, s) + sd * EDPftvarcon_inst%lf_fcel(ipft)
+               lit_dc(3, 2, el, s) = lit_dc(3, 2, el, s) + sd * EDPftvarcon_inst%lf_flig(ipft)
+            end do
+            lit_dc(2, 3, el, s) = lit_dc(2, 3, el, s) + sum(litt%ag_cwd_frag(:)) * ED_val_cwd_fcel * af * 1000.0_r8
+            lit_dc(3, 3, el, s) = lit_dc(3, 3, el, s) + sum(litt%ag_cwd_frag(:)) * ED_val_cwd_flig * af * 1000.0_r8
+            do j = 1, nlev_eff
+               lit_dc(:, 4, el, s) = lit_dc(:, 4, el, s) + litt%root_fines_frag(:, j) * af * 1000.0_r8
+               lit_dc(2, 5, el, s) = lit_dc(2, 5, el, s) + sum(litt%bg_cwd_frag(:, j)) * ED_val_cwd_fcel * af * 1000.0_r8
+               lit_dc(3, 5, el, s) = lit_dc(3, 5, el, s) + sum(litt%bg_cwd_frag(:, j)) * ED_val_cwd_flig * af * 1000.0_r8
+            end do
+         end if
          if (el == 1) then
             lit_src(1, s) = lit_src(1, s) + sum(litt%leaf_fines_frag(:)) * af * 1000.0_r8
             lit_src(2, s) = lit_src(2, s) + (sum(litt%seed_decay(:)) + sum(litt%seed_germ_decay(:))) * af * 1000.0_r8
@@ -1612,7 +1840,9 @@ subroutine rhessys_veg_dump_cohorts(site, patch_id, ymd, c_file, flen, first) &
    if (first /= 0) then
       open(newunit=u, file=trim(fname), status='replace', action='write')
       write(u,'(a)') 'date,patchID,fates_patch,patch_age_yr,patch_area_frac,pft,dbh_cm,height_m,'// &
-           'stems_per_ha,canopy_layer,leafc_kg_per_plant,crown_area_m2'
+           'stems_per_ha,canopy_layer,leafc_kg_per_plant,crown_area_m2,treelai_m2_per_m2_crown,'// &
+           'storec_kg_per_plant,fnrtc_kg_per_plant,status_coh,site_cstatus,site_gdd,site_nchilldays,'// &
+           'site_ncolddays,site_leafondate,site_leafoffdate,site_date,sapwc_kg_per_plant,structc_kg_per_plant'
    else
       open(newunit=u, file=trim(fname), status='old', position='append', action='write')
    end if
@@ -1622,10 +1852,22 @@ subroutine rhessys_veg_dump_cohorts(site, patch_id, ymd, c_file, flen, first) &
       ipa = ipa + 1
       ccohort => cpatch%tallest
       do while (associated(ccohort))
-         write(u,'(i8,",",i0,",",i0,",",f9.3,",",f8.5,",",i0,",",f8.3,",",f8.3,",",es12.5,",",i0,",",es12.5,",",f10.3)') &
+         ! treelai: FATES's leaf area per m2 of this cohort's crown (cohort LAI on the ground =
+         ! treelai x crown_area_m2 / ground area)
+         ! storec/fnrtc: storage and fine-root C per plant; status_coh 2 leaves on, 1 off, 3 shedding;
+         ! site_*: cold-deciduous phenology state (cstatus 2 not cold, 1 cold; dates are model days);
+         ! sapwc/structc: sapwood and structural (dead wood) C per plant, above + below ground
+         write(u,'(i8,",",i0,",",i0,",",f9.3,",",f8.5,",",i0,",",f8.3,",",f8.3,",",es12.5,",",i0,",",es12.5,",",f10.3,",",es12.5,'// &
+               '",",es12.5,",",es12.5,",",i0,",",i0,",",f9.2,",",i0,",",i0,",",i0,",",i0,",",i0,",",es12.5,",",es12.5)') &
               ymd, patch_id, ipa, cpatch%age, cpatch%area * area_inv, ccohort%pft, ccohort%dbh, &
               ccohort%height, ccohort%n * 1.0e4_r8 / cpatch%area * (cpatch%area * area_inv), &
-              ccohort%canopy_layer, ccohort%prt%GetState(leaf_organ, carbon12_element), ccohort%c_area
+              ccohort%canopy_layer, ccohort%prt%GetState(leaf_organ, carbon12_element), ccohort%c_area, &
+              ccohort%treelai, ccohort%prt%GetState(store_organ, carbon12_element), &
+              ccohort%prt%GetState(fnrt_organ, carbon12_element), ccohort%status_coh, &
+              fates%sites(site)%cstatus, fates%sites(site)%grow_deg_days, fates%sites(site)%nchilldays, &
+              fates%sites(site)%ncolddays, fates%sites(site)%cleafondate, fates%sites(site)%cleafoffdate, &
+              fates%sites(site)%phen_model_date, ccohort%prt%GetState(sapw_organ, carbon12_element), &
+              ccohort%prt%GetState(struct_organ, carbon12_element)
          ccohort => ccohort%shorter
       end do
       cpatch => cpatch%younger
@@ -1636,6 +1878,7 @@ end subroutine rhessys_veg_dump_cohorts
 !-------------------------------------------------------------------------------
 subroutine rhessys_veg_clean() bind(C, name=_VEG_CLEAN)
    ! TODO(Phase 5): deallocate site structures (FATES has no fates_clean yet).
+   if (allocated(alloc_acc)) call alloc_write(size(fates%sites))
    if (allocated(mort_acc)) call mort_write(size(fates%sites))
    if (cnp_coupled .and. fates_log_open) call mgmt_summary(fates_log_unit)
    if (fates_log_open) then

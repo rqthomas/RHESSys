@@ -186,6 +186,7 @@ void zone_daily_I(
 	double	temp, tmp;
 	double	Tlapse_adjustment;
 	double	trans_coeff1, trans_coeff2, z_delta, fn_tavg;
+	double	vpd_tlapse_tmin_tmax = 0.0, vpd_tlapse_tavg = -999.0, lapse_tmin = 0.0, lapse_tmax = 0.0;
 	int		season;
 	season = 0;
 	int		pf, rec;
@@ -316,12 +317,12 @@ void zone_daily_I(
                  Tlapse_adjustment = z_delta * zone[0].defaults[0][0].wet_lapse_rate;
 			  else
 				 Tlapse_adjustment = z_delta * zone[0].defaults[0][0].lapse_rate_tmin;
-			     zone[0].metv.tmin = temp - Tlapse_adjustment;
+			     zone[0].metv.tmin = temp - Tlapse_adjustment; lapse_tmin = Tlapse_adjustment;
 		    }
 		else {
 			 Tlapse_adjustment = z_delta *
              zone[0].base_stations[i][0].daily_clim[0].lapse_rate_tmin[day];
-			 zone[0].metv.tmin = temp - Tlapse_adjustment;
+			 zone[0].metv.tmin = temp - Tlapse_adjustment; lapse_tmin = Tlapse_adjustment;
 		 }
 			 flag++;
 		}
@@ -338,13 +339,13 @@ void zone_daily_I(
 				Tlapse_adjustment = z_delta * zone[0].defaults[0][0].wet_lapse_rate;
 			else
 				Tlapse_adjustment = z_delta * zone[0].defaults[0][0].lapse_rate_tmax;
-			zone[0].metv.tmax = temp - Tlapse_adjustment;
+			zone[0].metv.tmax = temp - Tlapse_adjustment; lapse_tmax = Tlapse_adjustment;
 			flag++;
 		}
 		else {
 			Tlapse_adjustment = z_delta *
 				zone[0].base_stations[i][0].daily_clim[0].lapse_rate_tmax[day];
-			zone[0].metv.tmax = temp - Tlapse_adjustment;
+			zone[0].metv.tmax = temp - Tlapse_adjustment; lapse_tmax = Tlapse_adjustment;
 			flag++;
 		}
 		}
@@ -353,6 +354,7 @@ void zone_daily_I(
 			zone[0].metv.tmax += command_line[0].tmax_add;
 			zone[0].metv.tmin += command_line[0].tmin_add;
 			}
+		if (i == 0) vpd_tlapse_tmin_tmax = 0.5 * (lapse_tmin + lapse_tmax);
         i++;
 	} /*end while*/
 	/*--------------------------------------------------------------*/
@@ -416,6 +418,8 @@ void zone_daily_I(
 	zone[0].metv.tnight = -999.0;
 	zone[0].metv.tsoil = -999.0;
 	zone[0].metv.vpd = -999.0;
+	zone[0].vpd_zdelta = 0.0;
+	zone[0].vpd_tlapse = 0.0;
 	zone[0].metv.vpd_day = -999.0;
 	zone[0].metv.vpd_night = -999.0;
 	zone[0].ndep_NO3 = -999.0;
@@ -720,6 +724,7 @@ void zone_daily_I(
 	if ( zone[0].base_stations[0][0].daily_clim[0].vpd != NULL ){
 		temp = zone[0].base_stations[0][0].daily_clim[0].vpd[day];
 		if ( temp != -999.0 ) zone[0].metv.vpd = temp;
+		zone[0].vpd_zdelta = z_delta;	/* for the dewpoint conversion of input vpd (zone_daily_F) */
 	}
 	/*--------------------------------------------------------------*/
 	/*	relative humidity											*/
@@ -774,6 +779,7 @@ void zone_daily_I(
 				Tlapse_adjustment = z_delta * zone[0].base_stations[0][0].daily_clim[0].lapse_rate_tavg[day];
 				zone[0].metv.tavg = temp - Tlapse_adjustment;
 			}
+			vpd_tlapse_tavg = Tlapse_adjustment;
 
 			if (command_line[0].tchange_flag > 0)  {
 				zone[0].metv.tavg += (command_line[0].tmax_add + command_line[0].tmin_add)/2.0;
@@ -786,6 +792,13 @@ void zone_daily_I(
 	else{
 		zone[0].metv.tavg = (zone[0].metv.tmin + zone[0].metv.tmax) /2.0 ;
 	}
+	/*--------------------------------------------------------------*/
+	/*	Base station tavg - zone tavg on this day (temperature lapse	*/
+	/*	actually applied, wet or dry; climate-change offsets cancel),	*/
+	/*	for the dewpoint conversion of input vpd in zone_daily_F.	*/
+	/*--------------------------------------------------------------*/
+	zone[0].vpd_tlapse = vpd_tlapse_tmin_tmax;
+	if (vpd_tlapse_tavg != -999.0) zone[0].vpd_tlapse = vpd_tlapse_tavg;
 	/*--------------------------------------------------------------*/
 	/*      LAI_scalar                                              */
 	/*--------------------------------------------------------------*/

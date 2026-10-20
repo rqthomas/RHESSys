@@ -37,6 +37,8 @@ struct stream_bgc_defaults *construct_stream_bgc_defaults(char *filename)
 	p->vf_N     = getDoubleParam(&paramCnt, &paramPtr, "stream_vf_N", "%lf", 2.0, 1);        /* m/day */
 	p->vf_denit = getDoubleParam(&paramCnt, &paramPtr, "stream_vf_denit", "%lf", 0.1, 1);    /* m/day */
 	p->f_mic    = getDoubleParam(&paramCnt, &paramPtr, "stream_f_mic", "%lf", 0.0, 1);       /* (DIM) microbial share of bed breakdown */
+	p->frag_q_exp = getDoubleParam(&paramCnt, &paramPtr, "stream_frag_q_exp", "%lf", 0.0, 1); /* (DIM) bed breakdown x min(1, (Q/Q_bf)^exp); 0 = off */
+	p->vf_nit   = getDoubleParam(&paramCnt, &paramPtr, "stream_vf_nit", "%lf", 0.0, 1);      /* m/day, NH4 -> NO3 nitrification; 0 = off */
 
 	/* optional list of reaches inside a lake/reservoir (whitespace-separated reach IDs,
 	   '#' starts a comment line): no in-stream processing there, loads pass through */
@@ -66,8 +68,10 @@ struct stream_bgc_defaults *construct_stream_bgc_defaults(char *filename)
 		}
 	}
 
-	if ((p->CUE < 0.0) || (p->CUE > 1.0) || (p->CN_mic <= 0.0) || (p->theta <= 0.0) || (p->f_mic < 0.0) || (p->f_mic > 1.0)) {
-		fprintf(stderr, "FATAL ERROR: in %s stream_CUE and stream_f_mic must be 0-1, stream_CN_mic and stream_theta > 0\n", filename);
+	if ((p->CUE < 0.0) || (p->CUE > 1.0) || (p->CN_mic <= 0.0) || (p->theta <= 0.0) || (p->f_mic < 0.0) || (p->f_mic > 1.0)
+	    || (p->frag_q_exp < 0.0) || (p->vf_nit < 0.0)) {
+		fprintf(stderr, "FATAL ERROR: in %s stream_CUE and stream_f_mic must be 0-1, stream_CN_mic and stream_theta > 0, "
+			"stream_frag_q_exp and stream_vf_nit >= 0\n", filename);
 		exit(EXIT_FAILURE);
 	}
 	if (paramPtr != NULL) free(paramPtr);

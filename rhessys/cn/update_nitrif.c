@@ -64,6 +64,7 @@ int update_nitrif(
 				  double porosity,
 				  double organic_soil_depth,
 				  double nitrif_proportion, 
+				  double nitrif_NH4_coef,
 				  double std)
 {
 	/*------------------------------------------------------*/
@@ -106,9 +107,13 @@ int update_nitrif(
 		nh4_conc = ns_soil->sminn / kg_soil * 1000000.0;
 
 		/*--------------------------------------------------------------*/
-		/* effect of ammonium conc on nitrification			*/
+		/* effect of ammonium conc on nitrification: 1 - exp(-coef x ppm),	*/
+		/* half-saturation ln2/coef ppm. Default 0.0105 (~66 ppm) is an	*/
+		/* agricultural-soil value; natural-soil ammonia oxidizers have far	*/
+		/* higher affinity (Stark & Firestone 1996: Km ~15 uM NH4+ in soil	*/
+		/* solution, i.e. ~0.6-6 ppm of total soil NH4 allowing for sorption)*/
 		/*--------------------------------------------------------------*/
-		N_scalar = 1.0 - exp(-0.0105 * nh4_conc);
+		N_scalar = 1.0 - exp(-nitrif_NH4_coef * nh4_conc);
 	
 		/*--------------------------------------------------------------*/
 		/*	compute effect of water and temperature on nitrification */

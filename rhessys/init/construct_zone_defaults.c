@@ -85,6 +85,7 @@ struct zone_default *construct_zone_defaults(
 		default_object_list[i].ID = 			getIntParam(&paramCnt, &paramPtr, "zone_default_ID", "%d", 1, 1);
 		default_object_list[i].atm_trans_lapse_rate =	getDoubleParam(&paramCnt, &paramPtr, "atm_trans_lapse_rate", "%lf", 0.000029, 1);
 		default_object_list[i].dewpoint_lapse_rate =	getDoubleParam(&paramCnt, &paramPtr, "dewpoint_lapse_rate", "%lf", 0.0015, 1);
+		default_object_list[i].vpd_dewpoint_lapse = getIntParam(&paramCnt, &paramPtr, "vpd_dewpoint_lapse", "%d", 1, 1);
 		default_object_list[i].max_effective_lai =	getDoubleParam(&paramCnt, &paramPtr, "max_effective_lai", "%lf", 10.0, 1);
 		default_object_list[i].lapse_rate =		getDoubleParam(&paramCnt, &paramPtr, "lapse_rate", "%lf", 0.0064, 1);
 		default_object_list[i].pptmin =			getDoubleParam(&paramCnt, &paramPtr, "pptmin", "%lf", 0.0254, 1);

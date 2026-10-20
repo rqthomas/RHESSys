@@ -35,6 +35,10 @@ static void dummy_veg_inv_assign(int *n, int *i) { (void)n; (void)i; }
 static void dummy_veg_set_ndemand(int *m) { (void)m; }
 static void dummy_veg_site_nneed(int *s, double *n) { (void)s; if (n) *n = 0.0; }
 static void dummy_veg_litter_src(int *s, double *v) { int k; (void)s; for (k = 0; k < 10; k++) v[k] = 0.0; }
+static void dummy_veg_set_leaf_export(int *s, double *f) { (void)s; (void)f; }
+static void dummy_veg_leaf_export(int *s, double *v) { int k; (void)s; for (k = 0; k < 4; k++) v[k] = 0.0; }
+static void dummy_veg_set_litter_direct(int *f) { (void)f; }
+static void dummy_veg_litter_dcmp(int *s, double *v) { int k; (void)s; for (k = 0; k < 30; k++) v[k] = 0.0; }
 static void dummy_veg_cwd_frac(double *v) { v[0] = 0.0; v[1] = 0.0; }
 static void dummy_veg_init_site(int *site, int *patch_id, double *lat, struct veg_bc *bc)
 { (void)site; (void)patch_id; (void)lat; (void)bc; }
@@ -67,6 +71,10 @@ veg_inv_assign_t    p_veg_inv_assign    = dummy_veg_inv_assign;
 veg_set_ndemand_t   p_veg_set_ndemand   = dummy_veg_set_ndemand;
 veg_site_nneed_t    p_veg_site_nneed    = dummy_veg_site_nneed;
 veg_litter_src_t    p_veg_litter_src    = dummy_veg_litter_src;
+veg_set_leaf_export_t p_veg_set_leaf_export = dummy_veg_set_leaf_export;
+veg_leaf_export_t   p_veg_leaf_export   = dummy_veg_leaf_export;
+veg_set_litter_direct_t p_veg_set_litter_direct = dummy_veg_set_litter_direct;
+veg_litter_dcmp_t   p_veg_litter_dcmp   = dummy_veg_litter_dcmp;
 veg_cwd_frac_t      p_veg_cwd_frac      = dummy_veg_cwd_frac;
 
 #ifdef FATES
@@ -82,6 +90,10 @@ void rhessys_veg_inv_assign(int *n, int *i);
 void rhessys_veg_set_ndemand(int *m);
 void rhessys_veg_site_nneed(int *s, double *n);
 void rhessys_veg_litter_src(int *s, double *v);
+void rhessys_veg_set_leaf_export(int *s, double *f);
+void rhessys_veg_leaf_export(int *s, double *v);
+void rhessys_veg_set_litter_direct(int *f);
+void rhessys_veg_litter_dcmp(int *s, double *v);
 void rhessys_veg_cwd_frac(double *v);
 void rhessys_veg_coldstart(struct veg_out *out_all);
 void rhessys_veg_init_site(int *site, int *patch_id, double *lat, struct veg_bc *bc);
@@ -114,6 +126,10 @@ int prime_veg(const char *which)
         p_veg_set_ndemand   = dummy_veg_set_ndemand;
         p_veg_site_nneed    = dummy_veg_site_nneed;
         p_veg_litter_src    = dummy_veg_litter_src;
+        p_veg_set_leaf_export = dummy_veg_set_leaf_export;
+        p_veg_leaf_export   = dummy_veg_leaf_export;
+        p_veg_set_litter_direct = dummy_veg_set_litter_direct;
+        p_veg_litter_dcmp   = dummy_veg_litter_dcmp;
         p_veg_cwd_frac      = dummy_veg_cwd_frac;
         return 0;
     }
@@ -137,6 +153,10 @@ int prime_veg(const char *which)
         p_veg_set_ndemand   = rhessys_veg_set_ndemand;
         p_veg_site_nneed    = rhessys_veg_site_nneed;
         p_veg_litter_src    = rhessys_veg_litter_src;
+        p_veg_set_leaf_export = rhessys_veg_set_leaf_export;
+        p_veg_leaf_export   = rhessys_veg_leaf_export;
+        p_veg_set_litter_direct = rhessys_veg_set_litter_direct;
+        p_veg_litter_dcmp   = rhessys_veg_litter_dcmp;
         p_veg_cwd_frac      = rhessys_veg_cwd_frac;
         fprintf(stderr, "RHESSys vegetation backend: FATES\n");
         return 0;

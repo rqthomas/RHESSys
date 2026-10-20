@@ -420,6 +420,7 @@ struct accumulate_patch_object
    double psn;
    double DOC_loss;
    double DON_loss;
+   double NO3_loss;   /* soil NO3 out - in (net export), kgN/m2; yearly patch output */
    double theta;
    double rootzone_depth;
    double soilmoist;
@@ -553,6 +554,7 @@ double N_mineral, N_immob;                /* kg N/day - net mineralization to NH
 double N_limit;                           /* 0-1 - decomposition scaling for N supply (1 = not limited) */
 double stream_CO2;                        /* kg C/day - respired */
 double stream_denitrif;                   /* kg N/day - denitrified */
+double stream_nitrif;                     /* kg N/day - water-column NH4 nitrified to NO3 (stream_vf_nit) */
 double Bed_mic_C;                         /* kg C/day - streambed C decomposed by attached microbes */
 double Bed_N_mineral, Bed_N_immob;        /* kg N/day - their net mineralization to NH4 / immobilization from NH4+NO3 */
 double Bed_N_limit;                       /* 0-1 - share of their potential breakdown the N supply allowed */
@@ -596,6 +598,8 @@ struct stream_bgc_defaults
         double vf_N;       /* m/day - supply of NH4+NO3 for immobilization */
         double vf_denit;   /* m/day - denitrification uptake velocity */
         double f_mic;      /* (DIM) - share of streambed breakdown done by attached microbes (rest -> DOC/DON) */
+        double frag_q_exp; /* (DIM) - streambed breakdown x min(1, (Q/Q_bf)^frag_q_exp): leaves on a near-dry bed barely leach or decay (0 = off) */
+        double vf_nit;     /* m/day - nitrification uptake velocity for water-column NH4 -> NO3 (0 = off) */
         int num_lake_reaches;  /* reaches inside a lake/reservoir: no in-stream processing (pass-through) */
         int *lake_reaches;     /* their reach IDs (stream_bgc_lake_reaches <file> in the -strbgc file) */
         };
@@ -1084,6 +1088,7 @@ struct  zone_default
         int             ID;
         double  atm_trans_lapse_rate;   /* 1/m  */
         double  dewpoint_lapse_rate;    /*      degrees C / m           */
+        int     vpd_dewpoint_lapse;     /* 1 (default): input vpd carried to the zone through the dewpoint (dewpoint_lapse_rate); 0: vpd used unchanged */
         double  lapse_rate;             /* Celcius degrees/m    */
         double  wet_lapse_rate;         /* Celcius degrees/m    */
         double  lapse_rate_precip_default;              /* k by m       */
@@ -1173,6 +1178,8 @@ struct zone_object
         double  rain_duration;                  		/* hours/day    */
         double  Delta_T;                                /* C degrees    */
         double  e_dewpoint;                             /* Pa           */
+        double  vpd_zdelta;                             /* m, zone - base station elevation (input vpd conversion) */
+        double  vpd_tlapse;                             /* deg C, base station tavg - zone tavg on this day (input vpd conversion) */
         double  e_horizon;      /* cos of angle to normal of flat       */
         double  e_horizon_topog;      /* cos of angle to normal of flat       */
         double  effective_lai;          /* area wt. average m^2/m^2     */
@@ -1358,6 +1365,7 @@ struct	soil_default
 	double  NH4_adsorption_rate;				/* kg /kg soil */
 	double  denitrif_proportion;				/* (DIM) 0-1 */
 	double  nitrif_proportion;				/* (DIM) 0-1, scales maximum nitrification rate */
+	double  nitrif_NH4_coef;				/* 1/ppm - NH4 dependence of nitrification, N_scalar = 1 - exp(-coef x NH4 ppm); half-saturation ln2/coef ppm (0.0105 default, ~66 ppm, agricultural soils) */
 	double	DON_production_rate;					/* (DIM) 0-1 */
 	double	gw_DOM_recharge_frac;				/* (DIM) 0-1: groundwater recharge carries this fraction of the soil-water DOM concentration (0 = only surface DOM, the original behaviour) */
 	double	soil_riparian;				/* 1 = riparian patch: with -gwtoriparian, hillslope groundwater discharges into these patches' saturated zone (soil ID 42 is also riparian, as before) */
@@ -2476,7 +2484,9 @@ struct  command_line_object
         int             demog_restart;                    /* 1 = start FATES from <world file>.fates (+ .fates_host) (-demog_restart) */
         char            fates_mgmtfile[FILEPATH_LEN];     /* FATES forest-management driver file (-demog_mgmt); empty = none */
         int             demog_nneed;                      /* 1 = growth-based FATES plant N demand (-demog_nneed), 0 = RD capacity */
+        int             demog_nstore_reg;                 /* 1 = FATES plant N claim x room in each cohort's N store (-demog_nstore_reg) */
         double          demog_wood_resp;                  /* fraction of FATES CWD fragmentation C respired by wood decay before RHESSys litter (-demog_wood_resp) */
+        int             demog_litter_direct;              /* 1 = FATES fine litter into RHESSys litter pools on the day it falls, legacy filing rules (-demog_litter_direct) */
         int             routing_flag;
         int             surface_routing_flag;
         int             stream_routing_flag;

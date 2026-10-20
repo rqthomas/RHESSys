@@ -112,13 +112,13 @@ void	output_stream_routing(
 	}
 
 	if (command_line[0].stream_bgc_flag == 1)
-		fprintf(outfile, " %e %e %e %e %e %e %e %e %e %f %e %e %e %e %e %e %e %e %e %e %e %e %f",
+		fprintf(outfile, " %e %e %e %e %e %e %e %e %e %f %e %e %e %e %e %e %e %e %e %e %e %e %e %f",
 			stream_network[0].benthic_POC, stream_network[0].benthic_PON,
 			stream_network[0].POC_deposit, stream_network[0].POC_entrain,
 			stream_network[0].Frag_C, stream_network[0].Frag_N,
 			stream_network[0].DOM_dec_C, stream_network[0].N_mineral,
 			stream_network[0].N_immob, stream_network[0].N_limit,
-			stream_network[0].stream_CO2, stream_network[0].stream_denitrif,
+			stream_network[0].stream_CO2, stream_network[0].stream_denitrif, stream_network[0].stream_nitrif,
 			stream_network[0].V_water, stream_network[0].wc_DOC, stream_network[0].wc_DON,
 			stream_network[0].wc_NO3, stream_network[0].wc_NH4, stream_network[0].wc_POC, stream_network[0].wc_PON,
 			stream_network[0].Bed_mic_C, stream_network[0].Bed_N_mineral,

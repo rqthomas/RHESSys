@@ -141,6 +141,11 @@ struct soil_default *construct_soil_defaults(
 		default_object_list[i].NO3_adsorption_rate =	getDoubleParam(&paramCnt, &paramPtr, "NO3_adsorption_rate", "%lf", 0.0, 1); 
 		default_object_list[i].nitrif_proportion =	getDoubleParam(&paramCnt, &paramPtr, "nitrif_proportion", "%lf", 1.0, 1);
 		default_object_list[i].denitrif_proportion =	getDoubleParam(&paramCnt, &paramPtr, "denitrif_proportion", "%lf", 1.0, 1);
+		default_object_list[i].nitrif_NH4_coef =	getDoubleParam(&paramCnt, &paramPtr, "nitrif_NH4_coef", "%lf", 0.0105, 1);
+		if (default_object_list[i].nitrif_NH4_coef <= 0.0) {
+			fprintf(stderr, "FATAL ERROR: soil default %d: nitrif_NH4_coef must be > 0\n", default_object_list[i].ID);
+			exit(EXIT_FAILURE);
+		}
 		default_object_list[i].N_decay_rate = 		getDoubleParam(&paramCnt, &paramPtr, "N_decay", "%lf", 0.12, 1); 
 		default_object_list[i].fixed_t_mult = 		getDoubleParam(&paramCnt, &paramPtr, "fixed_t_mult", "%lf", -999, 1); 
 		default_object_list[i].fixed_w_mult = 		getDoubleParam(&paramCnt, &paramPtr, "fixed_w_mult", "%lf", -999, 1); 

@@ -19,7 +19,8 @@
 /*	Process rates k = v fT A_bed / V (v uptake/settling		*/
 /*	velocity, m/day; A_bed = bottom width x length):		*/
 /*	  suspended POC/PON settle (v_dep) to the streambed store;	*/
-/*	  DOC/DON decompose (vf_DOM); NO3 denitrifies (vf_denit).	*/
+/*	  DOC/DON decompose (vf_DOM); NO3 denitrifies (vf_denit);	*/
+/*	  NH4 nitrifies to NO3 (vf_nit, default 0 = off).		*/
 /*	Streambed store (benthic POC/PON): leaf litter in the	*/
 /*	channel; breakdown (k_frag) - a share 1 - f_mic to DOC/DON	*/
 /*	(fragmentation/leaching) and f_mic decomposed in place by	*/
@@ -108,10 +109,10 @@ void compute_stream_bgc(struct stream_network_object *reach,
 			double Q, double V, double Tstream,              /* outflow m3/day, water volume m3, water temperature C */
 			struct stream_bgc_defaults *p)
 {
-	double fT, A_bed, r, kdep, kdec, kden, kN, fN;
+	double fT, A_bed, r, kdep, kdec, kden, kN, fN, knit, nit;
 	double fragC, fragN, fexp, entC, entN, rr;
 	double outNO3, outNH4, outDON, outDOC, outPOC, outPON;
-	double depC, depN, decC, decN, den, dummy;
+	double depC, depN, decC, decN, den;
 	double netN, need, supply, nlim, immob, bioC, bioN, M0DOC, M0DON;
 	double brkC, brkN, micC, micN, supply_tot, netNb, needb, availb, fb;
 
@@ -128,12 +129,20 @@ void compute_stream_bgc(struct stream_network_object *reach,
 		kdec = p->vf_DOM * fT * A_bed / V;
 		kden = p->vf_denit * fT * A_bed / V;
 		kN = p->vf_N * fT * A_bed / V;
-	} else kdep = kdec = kden = kN = 0.0;
+		knit = p->vf_nit * fT * A_bed / V;
+	} else kdep = kdec = kden = kN = knit = 0.0;
 
 	/* 1. streambed store: leaf litter in, fragmentation and entrainment out */
 	reach->benthic_POC += lat_POC;
 	reach->benthic_PON += lat_PON;
 	brkC = p->k_frag * fT * reach->benthic_POC;
+	/* optional wetness scaling (stream_frag_q_exp > 0): breakdown x min(1, (Q/Q_bf)^exp), so at
+	   low flow, when most of the bed leaf store is out of the water, little leaches into the
+	   small water volume (otherwise a fixed DOC load into a near-dry reach gives > 100 mg/L) */
+	if ((p->frag_q_exp > 0.0) && (reach->Q_bf > 0.0)) {
+		double wet = (Q > 0.0) ? pow(Q / reach->Q_bf, p->frag_q_exp) : 0.0;
+		if (wet < 1.0) brkC *= wet;
+	}
 	if (brkC > reach->benthic_POC) brkC = reach->benthic_POC;
 	brkN = (reach->benthic_POC > 0.0) ? brkC * reach->benthic_PON / reach->benthic_POC : 0.0;
 	if (brkN > reach->benthic_PON) brkN = reach->benthic_PON;
@@ -154,8 +163,10 @@ void compute_stream_bgc(struct stream_network_object *reach,
 	M0DOC = reach->wc_DOC;  M0DON = reach->wc_DON;
 	outDOC = store_step(&(reach->wc_DOC), DOC + fragC, r, kdec, &decC);
 	outDON = store_step(&(reach->wc_DON), DON + fragN, r, kdec, &decN);
-	outNO3 = store_step(&(reach->wc_NO3), NO3, r, kden, &den);
-	outNH4 = store_step(&(reach->wc_NH4), NH4, r, 0.0, &dummy);
+	/* NH4 first: nitrification (vf_nit) is its first-order process; the nitrified N joins
+	   the same day's NO3 input (then flows out or is stored and denitrified like any NO3) */
+	outNH4 = store_step(&(reach->wc_NH4), NH4, r, knit, &nit);
+	outNO3 = store_step(&(reach->wc_NO3), NO3 + nit, r, kden, &den);
 
 	/* 3. settled POC/PON to the streambed */
 	reach->benthic_POC += depC;  reach->benthic_PON += depN;
@@ -241,5 +252,6 @@ void compute_stream_bgc(struct stream_network_object *reach,
 	reach->DOM_dec_C = decC;     reach->N_immob = immob;
 	reach->N_limit = nlim;       reach->stream_CO2 = decC - bioC + (1.0 - p->CUE) * micC;
 	reach->stream_denitrif = den;
+	reach->stream_nitrif = nit;
 	return;
 } /*end compute_stream_bgc*/

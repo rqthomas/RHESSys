@@ -50,7 +50,7 @@ void	output_yearly_patch(
 
 
 
-	fprintf(outfile,"%d %d %d %d %d %d %d %d %d %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %d %d %d %d %d %lf %lf %lf %lf %lf %lf %lf %lf %lf \n",
+	fprintf(outfile,"%d %d %d %d %d %d %d %d %d %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %d %d %d %d %d %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf \n",
 			current_date.year,
 			basinID,
 			hillID,
@@ -86,7 +86,8 @@ void	output_yearly_patch(
 			patch[0].z, patch[0].acc_year.PET*1000.0, patch[0].acc_year.pcp*1000.0, patch[0].acc_year.burn, 
 			patch[0].acc_year.snowin*1000.0, patch[0].acc_year.potential_recharge*1000.0,
 			patch[0].acc_year.recharge*1000.0, patch[0].acc_year.potential_recharge_wyd,
-			patch[0].acc_year.recharge_wyd);
+			patch[0].acc_year.recharge_wyd,
+			patch[0].acc_year.NO3_loss * 1000.0);
 
 
 	/*--------------------------------------------------------------*/
@@ -129,6 +130,7 @@ void	output_yearly_patch(
 	patch[0].acc_year.potential_recharge_wyd = 0.0;
 	patch[0].acc_year.recharge = 0.0;
 	patch[0].acc_year.recharge_wyd = 0.0;
+	patch[0].acc_year.NO3_loss = 0.0;
 
 	return;
 

@@ -441,7 +441,7 @@ void add_headers(struct world_output_file_object *world_output_files,
 	/*	Yearly							*/
 	/*--------------------------------------------------------------*/
 	outfile = world_output_files[0].patch[0].yearly;
-	fprintf(outfile, "%s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s\n" ,
+	fprintf(outfile, "%s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s\n" ,
 			"year",
 			"basinID",
 			"hillID",
@@ -460,7 +460,8 @@ void add_headers(struct world_output_file_object *world_output_files,
 			"uptake","Theta","sd",
 			"pkswe", "pktrans", "pkpet", "streamflow", "Qin","Qout","rec.wyd","rec.pet.wyd", 
 			"ndays_sat", "ndays_sat70", "midsm_wyd",
-			"area","pet","pcp","burn","snowin","pot_recharge","recharge","recharge.wyd","pot_recharge.wyd"
+			"area","pet","pcp","burn","snowin","pot_recharge","recharge","recharge.wyd","pot_recharge.wyd",
+			"NO3_loss"
 			);
 	}
 
@@ -659,9 +660,9 @@ void add_headers(struct world_output_file_object *world_output_files,
 					"lateral_POC_sed", "lateral_PON_sed");
 		}
 		if (command_line[0].stream_bgc_flag == 1)
-			fprintf(outfile, " %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s",
+			fprintf(outfile, " %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s",
 				"benthic_POC", "benthic_PON", "POC_deposit", "POC_entrain", "Frag_C", "Frag_N",
-				"DOM_dec_C", "N_mineral", "N_immob", "N_limit", "stream_CO2", "stream_denitrif",
+				"DOM_dec_C", "N_mineral", "N_immob", "N_limit", "stream_CO2", "stream_denitrif", "stream_nitrif",
 				"V_water", "wc_DOC", "wc_DON", "wc_NO3", "wc_NH4", "wc_POC", "wc_PON",
 				"Bed_mic_C", "Bed_N_mineral", "Bed_N_immob", "Bed_N_limit");
 		if (command_line[0].stream_temp_flag == 1)

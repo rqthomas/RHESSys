@@ -163,7 +163,7 @@ struct stream_list_object construct_stream_routing_topology(
 		stream_network_ini[i].Frag_C=0.0; stream_network_ini[i].Frag_N=0.0;
 		stream_network_ini[i].DOM_dec_C=0.0; stream_network_ini[i].N_mineral=0.0;
 		stream_network_ini[i].N_immob=0.0; stream_network_ini[i].N_limit=1.0;
-		stream_network_ini[i].stream_CO2=0.0; stream_network_ini[i].stream_denitrif=0.0;
+		stream_network_ini[i].stream_CO2=0.0; stream_network_ini[i].stream_denitrif=0.0; stream_network_ini[i].stream_nitrif=0.0;
 		stream_network_ini[i].Bed_mic_C=0.0; stream_network_ini[i].Bed_N_mineral=0.0;
 		stream_network_ini[i].Bed_N_immob=0.0; stream_network_ini[i].Bed_N_limit=1.0;
 		/* stream temperature (-strtemp): cold start, overwritten from the state file */

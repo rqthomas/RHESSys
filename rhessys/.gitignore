@@ -9,3 +9,6 @@ output_filter/parser/lex.yy.c
 output_filter/parser/output_filter_parser.tab.c
 output_filter/parser/output_filter_parser.tab.h
 util/index_struct_fields.c
+
+# Build logs (written by the CCR kit build.sh)
+build_*.log
