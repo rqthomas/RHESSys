@@ -99,7 +99,17 @@ int update_gw_drainage(
 			double don = (patch[0].soil_ns.DON > ZERO) ? f * patch[0].soil_ns.DON : 0.0;
 			/* cap the recharge DOC concentration (mg C/L = g/m3; drainage in m) and move
 			   DON in the same proportion; what is not moved stays in the soil DOM pools */
-			if ((patch[0].soil_defaults[0][0].gw_DOC_recharge_max > 0.0) && (doc > ZERO)) {
+			if ((patch[0].soil_defaults[0][0].gw_DOC_sorb_frac >= 0.0) && (doc > ZERO)) {
+				/* subsoil sorption, initial-mass isotherm: the sorbed DOM stays in the soil pools */
+				double c = doc / drainage * 1000.0; /* mg C/L */
+				double c0 = patch[0].soil_defaults[0][0].gw_DOC_null_conc;
+				if (c > c0) {
+					double doc_new = (c - patch[0].soil_defaults[0][0].gw_DOC_sorb_frac * (c - c0)) * drainage / 1000.0;
+					don *= doc_new / doc;
+					doc = doc_new;
+				}
+			}
+			else if ((patch[0].soil_defaults[0][0].gw_DOC_recharge_max > 0.0) && (doc > ZERO)) {
 				double doc_max = patch[0].soil_defaults[0][0].gw_DOC_recharge_max * drainage / 1000.0; /* kg C/m2 */
 				if (doc > doc_max) {
 					don *= doc_max / doc;

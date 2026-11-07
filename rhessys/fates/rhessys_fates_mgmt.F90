@@ -24,7 +24,9 @@
 !          zone:<id> | zones:[...] | hill:<id> | hills:[...]
 ! events : harvest_trees (alias harvest_timber), harvest_biomass, thin_proportional,
 !          thin_low_perfect (alias thin_low), thin_low_probabilistic, thin_row_low,
-!          understory_control, hardwood_control, plant (alias plant_site), replant
+!          understory_control, hardwood_control, plant (alias plant_site), replant,
+!          rx_fire (alias prescribed_fire: low-intensity surface fire with SPITFIRE's bark /
+!          crown-scorch cohort mortality and host resprouting, see rx_fire_apply / rx_resprout)
 !          -- arguments: see parse_event(). Any removal event takes the VM v1.1
 !          conditions if_age_min / if_age_max (FATES patch age, yr), if_bai (min
 !          basal area of the eligible trees, m2/ha) and if_dbh_max (their mean dbh
@@ -55,7 +57,9 @@ module rhessys_fates_mgmt
    use PRTGenericMod,          only : leaf_organ, fnrt_organ, sapw_organ, store_organ, &
                                       repro_organ, struct_organ
    use FatesAllometryMod,      only : h2d_allom, h_allom, bleaf, bfineroot, bsap_allom, &
-                                      bagw_allom, bbgw_allom, bdead_allom, bstore_allom
+                                      bagw_allom, bbgw_allom, bdead_allom, bstore_allom, CrownDepth
+   use SFEquationsMod,         only : ScorchHeight, CrownFractionBurnt, CambialMortality, &
+                                      CrownFireMortality, TotalFireMortality
 
    implicit none
    private
@@ -64,10 +68,10 @@ module rhessys_fates_mgmt
 
    integer, parameter :: op_harvest = 1, op_thin_prop = 2, op_thin_low = 3, &
                          op_understory = 4, op_plant = 5, op_thin_prob = 6, op_thin_row = 7, &
-                         op_hardwood = 8, op_replant = 9
-   character(len=22), parameter :: op_name(9) = [character(len=22) :: 'harvest_trees', &
+                         op_hardwood = 8, op_replant = 9, op_rxfire = 10
+   character(len=22), parameter :: op_name(10) = [character(len=22) :: 'harvest_trees', &
         'thin_proportional', 'thin_low_perfect', 'understory_control', 'plant', &
-        'thin_low_probabilistic', 'thin_row_low', 'hardwood_control', 'replant']
+        'thin_low_probabilistic', 'thin_row_low', 'hardwood_control', 'replant', 'rx_fire']
    integer, parameter :: prof_bole = 1, prof_in_place = 2, prof_agb = 3
    ! VM thin_low_probabilistic model (loblolly pine thinning trials, Rady): removal
    ! probability 1/(1 + exp(-k (dbh - mean dbh - m))), k = steepness, m solved for the goal
@@ -98,6 +102,16 @@ module rhessys_fates_mgmt
       real(r8) :: if_age_min = -1.0_r8, if_age_max = -1.0_r8   ! conditions (patch age, yr)
       real(r8) :: if_bai = -1.0_r8, if_dbh_max = -1.0_r8
       real(r8) :: bare_dbh = 2.0_r8                     ! replant: "bare" = no tree >= this dbh (cm)
+      ! rx_fire: fire intensity (kW/m), flame residence time (min), share of fine fuels (twigs, small
+      ! branches, dead leaves, live grass) consumed, share of each FATES patch burned, resprouting
+      ! share of fire-killed stems by PFT (by position, 1..numpft) and resprout diameter (cm; one value
+      ! for all PFTs or a list by PFT)
+      real(r8) :: rx_fi = 100.0_r8, rx_tau = 1.0_r8, rx_fuel = 0.8_r8, rx_area = 0.9_r8
+      real(r8) :: rs_frac(maxpft_mg) = 0.0_r8
+      real(r8) :: rs_dbh(maxpft_mg) = 1.0_r8
+      ! resprout_mode=root: each killed stem's root system (fine root + storage + coarse root C) comes
+      ! back as one sprout of that C (rs_frac of killed stems; rs_dbh not used), see rx_resprout
+      logical  :: rs_root = .false.
       logical  :: pfts_given = .false.
       character(len=200) :: text = ''
    end type mg_event_t
@@ -123,6 +137,21 @@ module rhessys_fates_mgmt
    ! run totals (site means, written at the end)
    integer,  save :: n_site_events = 0
    real(r8), save :: tot_prod_c = 0.0_r8, tot_removed_c = 0.0_r8, tot_plant_c = 0.0_r8
+   ! prescribed fire (rx_fire): fire-killed stems per PFT today (plants per FATES site), event index;
+   ! run totals: site fire events, killed and resprouted stems (/ha, summed over events), resprout C
+   ! taken from the burned patch's fine-root litter and the part not covered by it (kgC/m2)
+   real(r8), allocatable, save :: rx_kill(:,:)
+   real(r8), allocatable, save :: rx_rootc(:,:)        ! fire-killed fine-root + storage C per PFT (kg per site)
+   integer,  allocatable, save :: rx_ev(:)
+   integer,  save :: n_rx_events = 0
+   real(r8), save :: tot_rx_killed = 0.0_r8, tot_rs_stems = 0.0_r8, tot_rs_c = 0.0_r8, tot_rs_short = 0.0_r8
+   ! resprout_mode=root: today's fire-killed plants (per FATES site) by PFT and log-dbh bin, their
+   ! belowground C (fine root + storage + belowground share of sapwood and structure, kg per site) and
+   ! n-weighted dbh sum; run total of sprout dbh x stems (mean sprout dbh in the summary)
+   integer,  parameter :: rk_nbin = 24
+   real(r8), parameter :: rk_dlo = 0.1_r8, rk_dhi = 200.0_r8
+   real(r8), allocatable, save :: rk_n(:,:,:), rk_c(:,:,:), rk_d(:,:,:)
+   real(r8), save :: tot_rs_dsum = 0.0_r8
 
    ! per-site selection for the hook: cohort address -> logging rates (threadprivate:
    ! one site is processed start-to-end by one thread)
@@ -162,6 +191,10 @@ subroutine mgmt_init(file, nsites, pid, zid, hid, log_unit, diagfile)
    allocate(d_on(nsites), d_ops(nsites), d_ba0(nsites), d_ba1(nsites), d_sd0(nsites), &
             d_sd1(nsites), d_c0(nsites), d_c1(nsites), d_prod_c(nsites), d_prod_n(nsites), &
             d_plant_n(nsites), d_plant_c(nsites), d_plant_stems(nsites))
+   allocate(rx_kill(maxpft_mg, nsites), rx_ev(nsites), rx_rootc(maxpft_mg, nsites))
+   rx_kill = 0.0_r8; rx_ev = 0; rx_rootc = 0.0_r8
+   allocate(rk_n(maxpft_mg, rk_nbin, nsites), rk_c(maxpft_mg, rk_nbin, nsites), rk_d(maxpft_mg, rk_nbin, nsites))
+   rk_n = 0.0_r8; rk_c = 0.0_r8; rk_d = 0.0_r8
    d_on = .false.
    diag_file = diagfile
    if (len_trim(file) == 0) return
@@ -227,6 +260,8 @@ subroutine mgmt_pre(site, s, tec_kind, tec_thin)
    d_on(s) = .false.
    any_rem = .false.; any_ev = .false.; cu = -1.0_r8
    d_ops(s) = ''
+   rx_kill(:, s) = 0.0_r8; rx_ev(s) = 0; rx_rootc(:, s) = 0.0_r8
+   rk_n(:, :, s) = 0.0_r8; rk_c(:, :, s) = 0.0_r8; rk_d(:, :, s) = 0.0_r8
 
    ! Phase 6 TEC partial removal -> thin_proportional per leaf habit
    if (tec_kind == 3) then
@@ -261,6 +296,14 @@ subroutine mgmt_pre(site, s, tec_kind, tec_thin)
             end if
          end if
          if (ev(n)%op == op_plant .or. ev(n)%op == op_replant) cycle   ! after dynamics
+         if (ev(n)%op == op_rxfire) then
+            if (host_logging_trigger) then                  ! TEC clear-cut today wins
+               write(logu,*) 'rhessys_fates_mgmt: site ', s, ' TEC harvest today, skipping ', trim(ev(n)%text)
+            else
+               call rx_fire_apply(site, s, ev(n)); rx_ev(s) = n
+            end if
+            cycle
+         end if
          if (host_logging_trigger) then                     ! TEC clear-cut today wins
             write(logu,*) 'rhessys_fates_mgmt: site ', s, ' TEC harvest today, skipping ', &
                  trim(ev(n)%text)
@@ -308,8 +351,213 @@ subroutine mgmt_post(site, s, bc_in)
          if (.not. event_today(ev(n), s)) cycle
          call plant(site, s, bc_in, ev(n))
       end do
+      if (rx_ev(s) > 0) call rx_resprout(site, s, bc_in, ev(rx_ev(s)))
    end if
 end subroutine mgmt_post
+
+!-------------------------------------------------------------------------------
+! rx_fire, before the daily dynamics: a low-intensity surface fire on every FATES patch of the site
+! (burned share rx_area). Cohort mortality from SPITFIRE's equations (Thonicke et al. 2010): crown
+! scorch from scorch height (fates_fire_alpha_SH x FI^0.667) and crown depth, cambial kill from bark
+! thickness (fates_fire_bark_scaler x dbh) and the flame residence time; FATES's own disturbance code
+! then splits the burned area off as a new patch, kills fire_mort of its cohorts, burns crowns and fuels
+! and books the fire C and N losses (as for the host's TEC fires). Killed stems are recorded per PFT
+! for rx_resprout. Fuel classes: 1 twigs, 2 small branches, 5 dead leaves, 6 live grass (as the host's
+! TEC fire); large branches and trunks do not burn.
+!-------------------------------------------------------------------------------
+subroutine rx_fire_apply(site, s, e)
+   type(ed_site_type), intent(inout), target :: site
+   integer,          intent(in) :: s
+   type(mg_event_t), intent(in) :: e
+   type(fates_patch_type),  pointer :: cp
+   type(fates_cohort_type), pointer :: c
+   integer  :: ft, ib
+   real(r8) :: sh, cd, nk, cbg
+   cp => site%oldest_patch
+   do while (associated(cp))
+      cp%fire = 1
+      cp%frac_burnt = e%rx_area
+      cp%FI = e%rx_fi
+      cp%tau_l = e%rx_tau
+      cp%fuel%frac_burnt(:) = 0.0_r8
+      cp%fuel%frac_burnt(1:2) = e%rx_fuel
+      cp%fuel%frac_burnt(5:6) = e%rx_fuel
+      c => cp%tallest
+      do while (associated(c))
+         ft = c%pft
+         c%fire_mort = 0.0_r8; c%fraction_crown_burned = 0.0_r8
+         c%crownfire_mort = 0.0_r8; c%cambial_mort = 0.0_r8
+         if (prt_params%woody(ft) == itrue) then
+            sh = ScorchHeight(EDPftvarcon_inst%fire_alpha_SH(ft), e%rx_fi)
+            call CrownDepth(c%height, ft, cd)
+            c%fraction_crown_burned = CrownFractionBurnt(sh, c%height, cd)
+            c%cambial_mort = CambialMortality(EDPftvarcon_inst%bark_scaler(ft), c%dbh, e%rx_tau)
+            c%crownfire_mort = CrownFireMortality(EDPftvarcon_inst%crown_kill(ft), c%fraction_crown_burned)
+            c%fire_mort = TotalFireMortality(c%crownfire_mort, c%cambial_mort)
+            if (ft <= maxpft_mg) then
+               rx_kill(ft, s) = rx_kill(ft, s) + c%n * cp%frac_burnt * c%fire_mort
+               rx_rootc(ft, s) = rx_rootc(ft, s) + c%n * cp%frac_burnt * c%fire_mort * &
+                    (c%prt%GetState(fnrt_organ, carbon12_element) + c%prt%GetState(store_organ, carbon12_element))
+               if (e%rs_root .and. e%rs_frac(ft) > 0.0_r8) then
+                  nk = c%n * cp%frac_burnt * c%fire_mort
+                  cbg = c%prt%GetState(fnrt_organ, carbon12_element) + c%prt%GetState(store_organ, carbon12_element) + &
+                       (1.0_r8 - prt_params%allom_agb_frac(ft)) * (c%prt%GetState(sapw_organ, carbon12_element) + &
+                       c%prt%GetState(struct_organ, carbon12_element))
+                  ib = 1 + int(real(rk_nbin, r8) * log(max(c%dbh, rk_dlo) / rk_dlo) / log(rk_dhi / rk_dlo))
+                  ib = max(1, min(rk_nbin, ib))
+                  rk_n(ft, ib, s) = rk_n(ft, ib, s) + nk
+                  rk_c(ft, ib, s) = rk_c(ft, ib, s) + nk * cbg
+                  rk_d(ft, ib, s) = rk_d(ft, ib, s) + nk * c%dbh
+               end if
+            end if
+         end if
+         c => c%shorter
+      end do
+      cp => cp%younger
+   end do
+   n_rx_events = n_rx_events + 1
+   tot_rx_killed = tot_rx_killed + sum(rx_kill(:, s))
+end subroutine rx_fire_apply
+
+!-------------------------------------------------------------------------------
+! rx_fire, after the daily dynamics (host resprouting approximation; FATES has no resprouting):
+! rs_frac(ft) of today's fire-killed stems of each PFT come back as small cohorts (dbh rs_dbh(ft)) in the
+! youngest FATES patch (the burned area just split off), built by plant(), limited by the killed plants'
+! root reserves: sprout C of a PFT <= rs_frac x its killed fine-root + storage C (so seedlings and small
+! shrubs killed in their thousands do not come back as larger plants). Their C and N are taken
+! from that patch's fine-root litter (where the killed plants' roots just went), booked as
+! flux_generic_out against plant()'s flux_generic_in, so the mass moves rather than appears; what the
+! litter cannot cover stays a generic input (tot_rs_short).
+! resprout_mode=root: the root system survives top-kill. Each killed stem (rs_frac of them) comes back as
+! one sprout whose whole C (as plant() builds it with full leaves) equals the killed plant's belowground C
+! (fine root + storage + (1 - agb_frac) x (sapwood + structure)): the sprout dbh is solved from the
+! allometry, at most the killed stem's dbh (by PFT and log-dbh bin, n-weighted). Below the C of a
+! recruit-size plant (fates_recruit_height_min) the sprouts come back at that size and fewer of them
+! (stems x root C / recruit C), so killed seedlings still do not multiply. C and N are taken from the
+! burned patch's fine-root and belowground coarse-wood litter (where the killed roots just went), so a
+! stem that grows between fires keeps its root C through the next fire (the oak "grub" strategy).
+!-------------------------------------------------------------------------------
+subroutine rx_resprout(site, s, bc_in, e)
+   type(ed_site_type), intent(inout), target :: site
+   integer,          intent(in) :: s
+   type(bc_in_type), intent(in) :: bc_in
+   type(mg_event_t), intent(in) :: e
+   type(mg_event_t) :: tev
+   type(fates_patch_type), pointer :: cp, young
+   real(r8) :: cplant, cmin, dmin, dlo, dhi, dmid, dkill, cper, l2fr
+   integer  :: ft, ib, it
+   tev%op = op_plant; tev%where = where_youngest
+   allocate(tev%site_mask(1)); tev%site_mask = .true.; tev%all_sites = .true.
+   young => null()
+   cp => site%oldest_patch
+   do while (associated(cp))
+      if (.not. associated(young)) then
+         young => cp
+      else if (cp%age < young%age) then
+         young => cp
+      end if
+      cp => cp%younger
+   end do
+   ! one plant() call per PFT (each with its own sprout diameter); each call's C and N are taken from
+   ! the fine-root litter left after the previous PFTs' sprouts
+   do ft = 1, min(numpft, maxpft_mg)
+      if (e%rs_frac(ft) <= 0.0_r8 .or. rx_kill(ft, s) <= 0.0_r8) cycle
+      l2fr = site%rec_l2fr(ft, 1)
+      if (e%rs_root) then
+         call h2d_allom(EDPftvarcon_inst%hgt_min(ft), ft, dmin)
+         cmin = sprout_c(dmin, ft, l2fr)
+         do ib = 1, rk_nbin
+            if (rk_n(ft, ib, s) <= 0.0_r8) cycle
+            cper = rk_c(ft, ib, s) / rk_n(ft, ib, s)               ! belowground C per killed plant
+            dkill = rk_d(ft, ib, s) / rk_n(ft, ib, s)
+            tev%density = 0.0_r8
+            if (cper >= cmin .and. dkill > dmin) then
+               dlo = dmin; dhi = dkill
+               if (sprout_c(dhi, ft, l2fr) <= cper) then
+                  dlo = dhi
+               else
+                  do it = 1, 50
+                     dmid = 0.5_r8 * (dlo + dhi)
+                     if (sprout_c(dmid, ft, l2fr) <= cper) then
+                        dlo = dmid
+                     else
+                        dhi = dmid
+                     end if
+                  end do
+               end if
+               tev%p_dbh = dlo
+               tev%density(ft) = e%rs_frac(ft) * rk_n(ft, ib, s)
+            else
+               tev%p_dbh = dmin
+               tev%density(ft) = e%rs_frac(ft) * rk_n(ft, ib, s) * min(1.0_r8, cper / cmin)
+            end if
+            if (tev%density(ft) <= 0.0_r8) cycle
+            call rs_plant(site, s, bc_in, tev, young, ft, .true.)
+         end do
+      else
+         ! C of one sprout at rs_dbh(ft) (full leaf; as plant() builds it)
+         cplant = sprout_c(e%rs_dbh(ft), ft, l2fr)
+         tev%density = 0.0_r8
+         tev%density(ft) = e%rs_frac(ft) * rx_kill(ft, s)              ! plants per 1-ha FATES site = stems/ha
+         if (cplant > 0.0_r8) tev%density(ft) = min(tev%density(ft), e%rs_frac(ft) * rx_rootc(ft, s) / cplant)
+         if (tev%density(ft) <= 0.0_r8) cycle
+         tev%p_dbh = e%rs_dbh(ft)
+         call rs_plant(site, s, bc_in, tev, young, ft, .false.)
+      end if
+   end do
+end subroutine rx_resprout
+
+! C of one plant of dbh d as plant() builds it with full leaves (kg)
+real(r8) function sprout_c(d, ft, l2fr)
+   real(r8), intent(in) :: d, l2fr
+   integer,  intent(in) :: ft
+   real(r8) :: cl, cf, cs, asw, cag, cbg, cst, cso
+   call bleaf(d, ft, 1, init_recruit_trim, 1.0_r8, cl)
+   call bfineroot(d, ft, init_recruit_trim, l2fr, 1.0_r8, cf)
+   call bsap_allom(d, ft, 1, init_recruit_trim, 1.0_r8, asw, cs)
+   call bagw_allom(d, ft, 1, 1.0_r8, cag)
+   call bbgw_allom(d, ft, 1.0_r8, cbg)
+   call bdead_allom(cag, cbg, cs, ft, cst)
+   call bstore_allom(d, ft, 1, init_recruit_trim, cso)
+   sprout_c = cl + cf + cs + cst + cso
+end function sprout_c
+
+! plant the sprouts of tev and take their C and N from the burned patch's fine-root litter (and, with
+! use_cwd, its belowground coarse-wood litter, in proportion to the two pools)
+subroutine rs_plant(site, s, bc_in, tev, young, ft, use_cwd)
+   type(ed_site_type), intent(inout), target :: site
+   integer,          intent(in) :: s, ft
+   type(bc_in_type), intent(in) :: bc_in
+   type(mg_event_t), intent(in) :: tev
+   type(fates_patch_type), pointer :: young
+   logical,          intent(in) :: use_cwd
+   real(r8) :: before(3), added, avail, av_f, av_c, take, f
+   integer  :: el
+   do el = 1, num_elements
+      before(el) = site%mass_balance(el)%flux_generic_in
+   end do
+   call plant(site, s, bc_in, tev)
+   tot_rs_stems = tot_rs_stems + tev%density(ft)
+   tot_rs_dsum = tot_rs_dsum + tev%density(ft) * tev%p_dbh
+   do el = 1, num_elements
+      added = site%mass_balance(el)%flux_generic_in - before(el)   ! kg per site
+      av_f = sum(young%litter(el)%root_fines(:, :)) * young%area
+      av_c = 0.0_r8
+      if (use_cwd) av_c = sum(young%litter(el)%bg_cwd(:, :)) * young%area
+      avail = av_f + av_c
+      take = min(added, avail)
+      if (avail > 0.0_r8 .and. take > 0.0_r8) then
+         f = 1.0_r8 - take / avail
+         young%litter(el)%root_fines(:, :) = young%litter(el)%root_fines(:, :) * f
+         if (use_cwd) young%litter(el)%bg_cwd(:, :) = young%litter(el)%bg_cwd(:, :) * f
+         site%mass_balance(el)%flux_generic_out = site%mass_balance(el)%flux_generic_out + take
+      end if
+      if (element_list(el) == carbon12_element) then
+         tot_rs_c = tot_rs_c + added * area_inv
+         tot_rs_short = tot_rs_short + (added - take) * area_inv
+      end if
+   end do
+end subroutine rs_plant
 
 !-------------------------------------------------------------------------------
 ! Serial, after all sites: append today's managed sites to <prefix>_fates_mgmt.csv
@@ -348,6 +596,10 @@ subroutine mgmt_summary(u)
    write(u,*) 'rhessys_fates_mgmt: managed site-days ', n_site_events, &
         ' sum over site-days (kgC/m2): live C removed ', tot_removed_c, ' wood products ', &
         tot_prod_c, ' planted ', tot_plant_c
+   if (n_rx_events > 0) write(u,*) 'rhessys_fates_mgmt: prescribed fire site events ', n_rx_events, &
+        ' killed stems/ha (sum) ', tot_rx_killed, ' resprouted stems/ha (sum) ', tot_rs_stems, &
+        ' resprout C (kgC/m2, sum) ', tot_rs_c, ' of it not covered by fine-root litter ', tot_rs_short, &
+        ' mean sprout dbh (cm) ', tot_rs_dsum / max(tot_rs_stems, nearzero)
 end subroutine mgmt_summary
 
 !===============================================================================
@@ -975,18 +1227,40 @@ subroutine read_id_file(fn, ids, nid)
    character(len=*), intent(in) :: fn
    integer, allocatable, intent(out) :: ids(:)
    integer, intent(out) :: nid
-   integer :: u, ios, v
+   integer :: u, ios, v, i, j, n
    integer, allocatable :: tmp(:)
+   character(len=65536) :: line
+   ! IDs separated by any whitespace or commas, any number per line ('!' or '#' starts a comment)
    open(newunit=u, file=fn, status='old', action='read', iostat=ios)
    if (ios /= 0) call mg_fail('cannot open target ID file '//trim(fn))
    allocate(ids(64)); nid = 0
    do
-      read(u, *, iostat=ios) v
+      read(u, '(a)', iostat=ios) line
       if (ios /= 0) exit
-      if (nid == size(ids)) then
-         allocate(tmp(2*size(ids))); tmp(1:nid) = ids(1:nid); call move_alloc(tmp, ids)
-      end if
-      nid = nid + 1; ids(nid) = v
+      i = index(line, '!'); if (i > 0) line(i:) = ' '
+      i = index(line, '#'); if (i > 0) line(i:) = ' '
+      do i = 1, len_trim(line)
+         if (line(i:i) == ',' .or. line(i:i) == achar(9)) line(i:i) = ' '
+      end do
+      n = len_trim(line); i = 1
+      do while (i <= n)
+         if (line(i:i) == ' ') then
+            i = i + 1; cycle
+         end if
+         j = index(line(i:n), ' ')
+         if (j == 0) then
+            j = n + 1
+         else
+            j = i + j - 1
+         end if
+         read(line(i:j-1), *, iostat=ios) v
+         if (ios /= 0) call mg_fail('bad ID "'//line(i:j-1)//'" in target ID file '//trim(fn))
+         if (nid == size(ids)) then
+            allocate(tmp(2*size(ids))); tmp(1:nid) = ids(1:nid); call move_alloc(tmp, ids)
+         end if
+         nid = nid + 1; ids(nid) = v
+         i = j
+      end do
    end do
    close(u)
 end subroutine read_id_file
@@ -1071,6 +1345,8 @@ subroutine parse_event(spec, e)
       e%op = op_plant
    case ('replant')
       e%op = op_replant
+   case ('rx_fire', 'prescribed_fire')
+      e%op = op_rxfire
    case default
       call mg_fail('unknown management event '//trim(name))
    end select
@@ -1130,6 +1406,35 @@ subroutine parse_event(spec, e)
          call one(val, e%if_dbh_max)
       case ('bare_dbh')
          call one(val, e%bare_dbh)
+      case ('intensity')
+         call one(val, e%rx_fi)
+      case ('residence')
+         call one(val, e%rx_tau)
+      case ('fuel_burn')
+         call one(val, e%rx_fuel)
+      case ('burned_fraction')
+         call one(val, e%rx_area)
+      case ('resprout')
+         call parse_real_list(val, r)
+         e%rs_frac = 0.0_r8
+         e%rs_frac(1:min(size(r), maxpft_mg)) = r(1:min(size(r), maxpft_mg))
+      case ('resprout_mode')
+         select case (trim(val))
+         case ('fixed', 'size')
+            e%rs_root = .false.
+         case ('root', 'roots', 'rootbank')
+            e%rs_root = .true.
+         case default
+            call mg_fail('unknown resprout_mode '//trim(val))
+         end select
+      case ('resprout_dbh')
+         call parse_real_list(val, r)
+         if (size(r) == 1) then
+            e%rs_dbh = r(1)
+         else
+            e%rs_dbh = 1.0_r8
+            e%rs_dbh(1:min(size(r), maxpft_mg)) = r(1:min(size(r), maxpft_mg))
+         end if
       case ('method')
          continue                                         ! VM: mow / herbicide are equivalent
       case ('flux_profile', 'profile')
@@ -1182,6 +1487,15 @@ subroutine parse_event(spec, e)
    ! herbicide-type control kills only its targets: no understory damage under the
    ! killed crowns unless asked for (FATES's logging gap would kill everything there)
    if (e%op == op_hardwood .and. e%under_damage < 0.0_r8) e%under_damage = 0.0_r8
+   if (e%op == op_rxfire) then
+      if (e%rx_area <= 0.0_r8 .or. e%rx_area > 0.98_r8) &
+           call mg_fail('rx_fire burned_fraction must be in (0, 0.98]: '//trim(spec))
+      if (e%rx_fi < 0.0_r8 .or. e%rx_tau < 0.0_r8 .or. e%rx_fuel < 0.0_r8 .or. e%rx_fuel > 1.0_r8) &
+           call mg_fail('rx_fire needs intensity, residence >= 0 and fuel_burn in [0,1]: '//trim(spec))
+      if (any(e%rs_frac < 0.0_r8) .or. any(e%rs_frac > 1.0_r8)) &
+           call mg_fail('rx_fire resprout shares must be in [0,1]: '//trim(spec))
+      if (any(e%rs_dbh <= 0.0_r8)) call mg_fail('rx_fire resprout_dbh must be > 0: '//trim(spec))
+   end if
    if (e%op == op_thin_row) then
       if (e%row_fraction <= 0.0_r8 .or. e%row_fraction > 1.0_r8) &
            call mg_fail('thin_row_low needs row_fraction in (0,1]: '//trim(spec))

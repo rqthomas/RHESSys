@@ -39,6 +39,18 @@ struct stream_bgc_defaults *construct_stream_bgc_defaults(char *filename)
 	p->f_mic    = getDoubleParam(&paramCnt, &paramPtr, "stream_f_mic", "%lf", 0.0, 1);       /* (DIM) microbial share of bed breakdown */
 	p->frag_q_exp = getDoubleParam(&paramCnt, &paramPtr, "stream_frag_q_exp", "%lf", 0.0, 1); /* (DIM) bed breakdown x min(1, (Q/Q_bf)^exp); 0 = off */
 	p->vf_nit   = getDoubleParam(&paramCnt, &paramPtr, "stream_vf_nit", "%lf", 0.0, 1);      /* m/day, NH4 -> NO3 nitrification; 0 = off */
+	/* two DOM pools (2026-11-06): labile = bed leachate + lat_DOM_labile_frac of the lateral load (vf_DOM),
+	   refractory = the rest of the lateral load (vf_DOMr). Defaults (1, 0) = the single-pool model. */
+	p->vf_DOMr  = getDoubleParam(&paramCnt, &paramPtr, "stream_vf_DOMr", "%lf", 0.0, 1);     /* m/day */
+	p->lat_DOM_labile_frac = getDoubleParam(&paramCnt, &paramPtr, "stream_lat_DOM_labile_frac", "%lf", 1.0, 1); /* (DIM) */
+	if ((p->lat_DOM_labile_frac < 0.0) || (p->lat_DOM_labile_frac > 1.0)) {
+		fprintf(stderr, "FATAL ERROR: stream_lat_DOM_labile_frac must be 0-1\n");
+		exit(EXIT_FAILURE);
+	}
+	/* wetted width from hydraulic geometry, w = a Q^b (Q in m3/s; Leopold & Maddock 1953; e.g. Raymond et al.
+	   2012: a 12.88, b 0.42) for the bed area of all in-stream processes; a = 0 (default): reach bottom_width */
+	p->hg_width_a = getDoubleParam(&paramCnt, &paramPtr, "stream_hg_width_a", "%lf", 0.0, 1);  /* m (m3/s)^-b */
+	p->hg_width_b = getDoubleParam(&paramCnt, &paramPtr, "stream_hg_width_b", "%lf", 0.42, 1); /* (DIM) */
 
 	/* optional list of reaches inside a lake/reservoir (whitespace-separated reach IDs,
 	   '#' starts a comment line): no in-stream processing there, loads pass through */

@@ -40,10 +40,19 @@ Iribane, J.V. and W.L. Godson, 1981.  Atmospheric Thermodynamics. 2nd
 #define LIVELAB_CN  50           /* C:N for labile fraction of live wood */
 #define LIG_CN      500.0        /* C:N for all lignin components */
 #define CEL_CN      250.0        /* C:N for all cellulose components */
+/* soil pool C:N; overridable at build time (e.g. make CMD_OPTS="-DSOIL4_CN=20.0") for sensitivity tests */
+#ifndef SOIL1_CN
 #define SOIL1_CN    12.0         /* C:N for fast microbial recycling pool */
+#endif
+#ifndef SOIL2_CN
 #define SOIL2_CN    12.0         /* C:N for slow microbial recycling pool */
+#endif
+#ifndef SOIL3_CN
 #define SOIL3_CN    10.0         /* C:N for recalcitrant SOM pool (humus) */
+#endif
+#ifndef SOIL4_CN
 #define SOIL4_CN    8.0         /* C:N for recalcitrant SOM pool (lignin) */
+#endif
 
 #define NONWOOD_GRPERC 1.2  /* (DIM) growth resp per unit of nonwood C grown */
 #define WOOD_GRPERC    2.0  /* (DIM) growth resp per unit of woody C grown */

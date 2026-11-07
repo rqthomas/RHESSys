@@ -228,6 +228,15 @@ static void nb_report(void)
 #else
 #define NB_CP(k)
 #endif
+
+/* RHESSYS_RAD_DIAG=<patchID>: print this patch's daily canopy radiation passage to stderr
+   (layers, strata inputs, light left after each layer); diagnostic only */
+int rad_diag_patch(int id)
+{
+	static int want = -2;
+	if (want == -2) { const char *e = getenv("RHESSYS_RAD_DIAG"); want = (e != NULL) ? atoi(e) : -1; }
+	return (want >= 0) && (id == want);
+}
 void		patch_daily_F(
 						  struct	world_object	*world,
 						  struct	basin_object	*basin,
@@ -925,8 +934,25 @@ void		patch_daily_F(
 	/*--------------------------------------------------------------*/
 	/* Layers above snowpack and pond */
 	/*--------------------------------------------------------------*/
+	if (rad_diag_patch(patch[0].ID))
+		fprintf(stderr, "RADDIAG %d-%02d-%02d patch %d IN Kdir %.1f Kdif %.1f layers %d snow_h %.3f pond_h %.3f\n",
+			current_date.year, current_date.month, current_date.day, patch[0].ID, patch[0].Kdown_direct,
+			patch[0].Kdown_diffuse, patch[0].num_layers, patch[0].snowpack.height, pond_height);
 	for ( layer=0 ; layer<patch[0].num_layers; layer++ ){
 		patch[0].snowpack.overstory_height = zone[0].base_stations[0][0].screen_height;
+		if (rad_diag_patch(patch[0].ID)) {
+			int k;
+			fprintf(stderr, "RADDIAG   layer %d height %.3f null_cover %.3f count %d above %d\n", layer,
+				patch[0].layers[layer].height, patch[0].layers[layer].null_cover, patch[0].layers[layer].count,
+				(patch[0].layers[layer].height > patch[0].snowpack.height) && (patch[0].layers[layer].height > pond_height));
+			for (k = 0; k < patch[0].layers[layer].count; k++) {
+				struct canopy_strata_object *q = patch[0].canopy_strata[patch[0].layers[layer].strata[k]];
+				fprintf(stderr, "RADDIAG     stratum %d veg %d type %d cover %.3f gap %.3f proj_lai %.3f proj_pai %.3f all_pai %.3f ext %.3f h %.3f sunlit %.3f\n",
+					q[0].ID, q[0].defaults[0][0].ID, q[0].defaults[0][0].epc.veg_type, q[0].cover_fraction, q[0].gap_fraction,
+					q[0].epv.proj_lai, q[0].epv.proj_pai, q[0].epv.all_pai, q[0].defaults[0][0].epc.ext_coef,
+					q[0].epv.height, q[0].epv.proj_lai_sunlit);
+			}
+		}
 
 
 		if ( (patch[0].layers[layer].height > patch[0].snowpack.height) &&
@@ -994,6 +1020,9 @@ void		patch_daily_F(
 
 				dum += 1;
 			}
+			if (rad_diag_patch(patch[0].ID))
+				fprintf(stderr, "RADDIAG   after layer %d: Kdir %.1f Kdif %.1f Kstar_canopy %.1f\n", layer,
+					patch[0].Kdown_direct_final, patch[0].Kdown_diffuse_final, patch[0].Kstar_canopy_final);
 			patch[0].Kdown_direct = patch[0].Kdown_direct_final;
 			patch[0].Kup_direct = patch[0].Kup_direct_final;
 			patch[0].Kdown_diffuse = patch[0].Kdown_diffuse_final;
@@ -2375,7 +2404,8 @@ void		patch_daily_F(
 	/*	the NO3 of the saturated zone (soil nitrate on its		*/
 	/*	exponential N_decay profile, share q / saturated water)	*/
 	/*	and soil DOM at the soil-water concentration (DOC capped	*/
-	/*	by gw_DOC_recharge_max, DON in proportion), as N_to_gw,	*/
+	/*	by gw_DOC_recharge_max, or reduced by subsoil sorption	*/
+	/*	with gw_DOC_sorb_frac; DON in proportion), as N_to_gw,	*/
 	/*	DON_to_gw and DOC_to_gw. Daily time step only.		*/
 	/*--------------------------------------------------------------*/
 	if ((command_line[0].gw_flag > 0) && (zone[0].hourly_rain_flag != 1)
@@ -2408,7 +2438,15 @@ void		patch_daily_F(
 					double fd = min(1.0, q / soil_water);
 					double doc = (patch[0].soil_cs.DOC > ZERO) ? fd * patch[0].soil_cs.DOC : 0.0;
 					double don = (patch[0].soil_ns.DON > ZERO) ? fd * patch[0].soil_ns.DON : 0.0;
-					if ((sd->gw_DOC_recharge_max > 0.0) && (doc > ZERO)) {
+					if ((sd->gw_DOC_sorb_frac >= 0.0) && (doc > ZERO)) {
+						/* subsoil sorption, initial-mass isotherm (mg C/L = g/m3; q in m) */
+						double c = doc / q * 1000.0;
+						if (c > sd->gw_DOC_null_conc) {
+							double doc_new = (c - sd->gw_DOC_sorb_frac * (c - sd->gw_DOC_null_conc)) * q / 1000.0;
+							don *= doc_new / doc; doc = doc_new;
+						}
+					}
+					else if ((sd->gw_DOC_recharge_max > 0.0) && (doc > ZERO)) {
 						double doc_max = sd->gw_DOC_recharge_max * q / 1000.0;
 						if (doc > doc_max) { don *= doc_max / doc; doc = doc_max; }
 					}

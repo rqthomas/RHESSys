@@ -153,7 +153,14 @@ void		patch_hourly(
 	else
 		patch[0].hourly[0].rain_throughfall = 0.0;
 
-	patch[0].hourly[0].NO3_throughfall = zone[0].ndep_NO3/24; 
+	/* NO3 deposition: ndep_NO3_to_soil of it goes straight to soil nitrate (as NH4 deposition
+	   does); the rest lands on the canopy / surface and reaches the soil only with infiltration */
+	if (patch[0].soil_defaults[0][0].ndep_NO3_to_soil > 0.0) {
+		patch[0].soil_ns.nitrate += patch[0].soil_defaults[0][0].ndep_NO3_to_soil * zone[0].ndep_NO3 / 24;
+		patch[0].hourly[0].NO3_throughfall = (1.0 - patch[0].soil_defaults[0][0].ndep_NO3_to_soil) * zone[0].ndep_NO3 / 24;
+	}
+	else
+		patch[0].hourly[0].NO3_throughfall = zone[0].ndep_NO3/24; 
 
 
 	/*--------------------------------------------------------------*/

@@ -17,6 +17,13 @@ CLM seed-dispersal/MPI modules FATES expects from a climate model) and the host 
   FATES litter pool (e.g. stream-side leaves falling into the channel)
 - canopy-structure fix: the scratch vectors are sized for the cohorts actually in the patch
   (EDCanopyStructureMod)
+- per-site `fates_mort_disturb_frac` (2026-10-30): `ed_site_type%host_mort_disturb_frac` (< 0 = use the
+  parameter), set by the host (`-demog_mort_disturb <frac> <patch IDs>`); used in Mortality_Derivative,
+  disturbance_rates, spawn_patches and mortality_litter_fluxes (EDTypesMod, EDMortalityFunctionsMod,
+  EDPatchDynamicsMod). Previous patch: rhessys_host_patches.patch.pre_mortdisturb
+- browse mortality of small saplings (2026-10-30): EDMortalityFunctionsMod host_browse_rate / _height / _mask
+  (rate <= 0 = off) add a rate (1/yr) to background mortality of tree cohorts below a height in the listed PFTs; set
+  by the host (`-demog_browse <rate> <height m> <PFT list>`). Previous patch: rhessys_host_patches.patch.pre_browse
 - phenology fix: growing degree days also accumulate in the `nevercold` state, so a site whose
   cold leaf-off comes more than 400 days after the previous one still leafs out (EDPhysiologyMod)
 

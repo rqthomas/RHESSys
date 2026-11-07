@@ -50,8 +50,9 @@ double  compute_stream_routing(struct command_line_object *command_line,
 						 struct	date	current_date,
 						 double T_air)
 {
-	void compute_stream_bgc(struct stream_network_object *, double, double, double, double,
+	void compute_stream_bgc(struct stream_network_object *, double, double, double, double, double, double,
 		double, double, double, double, double, double, double, struct stream_bgc_defaults *);
+	double flab;   /* share of the lateral DOC/DON load entering the labile pool (rest refractory) */
 	int stream_bgc_is_lake(int, struct stream_bgc_defaults *);
 	void compute_stream_temperature(struct stream_network_object *, struct stream_temp_input *,
 		struct stream_temp_defaults *);
@@ -245,6 +246,13 @@ double  compute_stream_routing(struct command_line_object *command_line,
 			 
 					}
 
+		/* water taken in but not yet released by the daily kinematic wave (m3): on rising limbs outflow lags
+		   inflow + lateral input. It is part of the reach solute store volume below, so solutes leave with the
+		   water rather than the same day (2026-11-06; before, the store was alfa Q^0.6 L only and solutes
+		   overshot the input concentrations on rising limbs) */
+		stream_network[i].lag_water += (Qin + lateral_input_flow * length - stream_network[i].Qout) * dt;
+		if (stream_network[i].lag_water < 0.0) stream_network[i].lag_water = 0.0;
+
 		/*calulate initial flow and previous lateral input for next time step */
 		stream_network[i].initial_flow=Qout;
 		stream_network[i].previous_lateral_input=lateral_input_flow;
@@ -280,6 +288,7 @@ double  compute_stream_routing(struct command_line_object *command_line,
 		   reaches listed as inside a lake/reservoir pass loads through */
 		bgc_here = (command_line[0].stream_bgc_flag == 1)
 			&& !stream_bgc_is_lake(stream_network[i].reach_ID, command_line[0].stream_bgc);
+		flab = (command_line[0].stream_bgc != NULL) ? command_line[0].stream_bgc->lat_DOM_labile_frac : 1.0;
 		if (bgc_here && (command_line[0].grow_flag > 0)) {
 			/* water temperature for processing: -strtemp, else from air temperature */
 			if (command_line[0].stream_temp_flag == 1) T_bgc = stream_network[i].T_mean;
@@ -290,25 +299,39 @@ double  compute_stream_routing(struct command_line_object *command_line,
 			/* in-stream storage and processing: sets NO3/NH4/DON/DOC/POC/PON_out */
 			compute_stream_bgc(&(stream_network[i]),
 				stream_network[i].NO3_in + lateral_NO3, stream_network[i].NH4_in + lateral_NH4,
-				stream_network[i].DON_in + lateral_DON, stream_network[i].DOC_in + lateral_DOC,
+				stream_network[i].DON_in + flab * lateral_DON, stream_network[i].DOC_in + flab * lateral_DOC,
+				stream_network[i].DONr_in + (1.0 - flab) * lateral_DON, stream_network[i].DOCr_in + (1.0 - flab) * lateral_DOC,
 				stream_network[i].POC_in + lateral_POC_sed, stream_network[i].PON_in + lateral_PON_sed, lateral_POC, lateral_PON,
 				stream_network[i].Qout * 86400.0,
-				alfa * pow(max(stream_network[i].Qout, 0.0), 0.6) * stream_network[i].length,   /* reach water volume, m3 */
+				alfa * pow(max(stream_network[i].Qout, 0.0), 0.6) * stream_network[i].length
+					+ stream_network[i].lag_water,   /* reach water volume incl. kinematic-wave lag water, m3 */
 				T_bgc, command_line[0].stream_bgc);
 			stream_network[i].lateral_NO3 = lateral_NO3;
 			stream_network[i].lateral_NH4 = lateral_NH4;
 			stream_network[i].lateral_DON = lateral_DON;
 			stream_network[i].lateral_DOC = lateral_DOC;
+			stream_network[i].lateral_DOCr = (1.0 - flab) * lateral_DOC;
+			stream_network[i].lateral_DONr = (1.0 - flab) * lateral_DON;
 			stream_network[i].NO3_in = 0.0;
 			stream_network[i].NH4_in = 0.0;
 			stream_network[i].DON_in = 0.0;
 			stream_network[i].DOC_in = 0.0;
+			stream_network[i].DOCr_in = 0.0;
+			stream_network[i].DONr_in = 0.0;
 		}
 		else if (command_line[0].grow_flag > 0) {
+			/* pass-through (no -strbgc, or a reach inside the lake): the lateral load is still split into
+			   the labile (DOC/DON_out) and refractory (DOCr/DONr_out) pools */
 			stream_network[i].NO3_out = stream_network[i].NO3_in + lateral_NO3;
 			stream_network[i].NH4_out = stream_network[i].NH4_in + lateral_NH4;
-			stream_network[i].DON_out = stream_network[i].DON_in + lateral_DON;
-			stream_network[i].DOC_out = stream_network[i].DOC_in + lateral_DOC;
+			stream_network[i].DON_out = stream_network[i].DON_in + flab * lateral_DON;
+			stream_network[i].DOC_out = stream_network[i].DOC_in + flab * lateral_DOC;
+			stream_network[i].DONr_out = stream_network[i].DONr_in + (1.0 - flab) * lateral_DON;
+			stream_network[i].DOCr_out = stream_network[i].DOCr_in + (1.0 - flab) * lateral_DOC;
+			stream_network[i].lateral_DOCr = (1.0 - flab) * lateral_DOC;
+			stream_network[i].lateral_DONr = (1.0 - flab) * lateral_DON;
+			stream_network[i].DOCr_in = 0.0;
+			stream_network[i].DONr_in = 0.0;
 			stream_network[i].lateral_NO3 = lateral_NO3;
 			stream_network[i].lateral_NH4 = lateral_NH4;
 			stream_network[i].lateral_DON = lateral_DON;
@@ -350,6 +373,8 @@ double  compute_stream_routing(struct command_line_object *command_line,
 						stream_network[k].NH4_in += stream_network[i].NH4_out / stream_network[i].num_downstream_neighbours;
 						stream_network[k].DON_in += stream_network[i].DON_out / stream_network[i].num_downstream_neighbours;
 						stream_network[k].DOC_in += stream_network[i].DOC_out / stream_network[i].num_downstream_neighbours;
+						stream_network[k].DONr_in += stream_network[i].DONr_out / stream_network[i].num_downstream_neighbours;
+						stream_network[k].DOCr_in += stream_network[i].DOCr_out / stream_network[i].num_downstream_neighbours;
 					}
 					stream_network[k].sediment_in += stream_network[i].sediment_out / stream_network[i].num_downstream_neighbours;
 					stream_network[k].POC_in += stream_network[i].POC_out / stream_network[i].num_downstream_neighbours;

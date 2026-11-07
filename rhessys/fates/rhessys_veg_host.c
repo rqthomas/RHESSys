@@ -89,6 +89,7 @@ static double		tot_firec = 0.0, tot_firen = 0.0, tot_harvc = 0.0, tot_harvn = 0.
 static double		tot_streamc = 0.0, tot_streamn = 0.0;	/* FATES leaf litter into streams (g/m2/day x area) */
 /* -demog_litter_direct: FATES fine litter filed into RHESSys pools with the legacy rules */
 static int		litter_direct = 0;
+static int		host_ndiurnal = 1;	/* -demog_diurnal: daylight flux sub-steps */
 static long		ld_nfall = 0, ld_nall = 0;	/* site-days whose labile N fell back to C-proportional */
 static double		ld_c3 = 0.0, ld_c = 0.0;	/* C into shielded cellulose / all C filed (x area) */
 static double		ld_cerr = 0.0, ld_nerr = 0.0;	/* max |filed - FATES litter flux| per site-day (g/m2/day) */
@@ -119,6 +120,7 @@ static int		*site_nbad = NULL;
 #define VH_HOST_MAGIC	"RHFHOST2"
 /* FATES model day continues across restarts / spin-up segments */
 static double		md_offset = 0.0, md_last = -1.0;
+static double		tot_nfix = 0.0;	/* area-weighted FATES symbiotic N fixation (gN) */
 static double		nb_max = 0.0, nb_sum = 0.0, leg_max = 0.0, tot_up = 0.0, tot_recv = 0.0,
 			tot_litc = 0.0, tot_litn = 0.0, tot_area_days = 0.0;
 static long		nb_n = 0, nb_big = 0;
@@ -149,6 +151,25 @@ static long		wb_n = 0, wb_big = 0;
 static FILE		*fbasin = NULL, *fflux = NULL;
 /* daily N-competition diagnostic (mode 3): diag patch + area-weighted means over sites */
 static FILE		*fncomp = NULL;
+/* -demog_nmine: mined soil organic N granted today (gN/m2/day, handed to FATES tomorrow) and
+   yearly diagnostics per site (g/m2/yr: demand, mined N, SOM C released) */
+static double		*site_mine = NULL, *nm_dem_yr = NULL, *nm_n_yr = NULL, *nm_c_yr = NULL, *nm_som_n = NULL;
+static double		nmine_rate = 0.0;
+/* -demog_nforage: today's AM claim boost (kgN/m2/day) per site and the share of today's plant
+   uptake it won (handed to FATES tomorrow); yearly sums (g/m2/yr) of the boost and the N won */
+static double		*site_amboost = NULL, *site_amfrac = NULL, *nf_dem_yr = NULL, *nf_n_yr = NULL;
+static int		nforage_on = 0;
+/* -demog_nfun: root-zone mineral N available to plants (gN/m2, handed to FATES tomorrow as the N
+   term of the FUN-style cost) and yearly sums per site (g/m2/yr): N to AM / ECM cohorts, N x cost
+   AM / ECM (for N-weighted mean costs), C charged to NPP, mineral N x days */
+static double		*site_navail = NULL, *nu_yr = NULL;
+#define NU_NV 7
+static int		nfun_on = 0;
+static long		nfun_year = -1;
+static FILE		*fnfun = NULL;
+static int		nmine_on = 0;
+static long		nmine_year = -1;
+static FILE		*fnmine = NULL;
 static struct date	nc_date;
 static int		nc_calls = 0;
 static double		nc_sum[12], nc_area = 0.0;
@@ -404,12 +425,14 @@ static void fates_litter_and_budget(struct patch_object *patch, int site, double
 	tot_litn += patch[0].area * litn;
 	tot_up += patch[0].area * given;
 	tot_recv += patch[0].area * o[0].n_uptake_recv;
+	tot_nfix += patch[0].area * o[0].n_fix;
+	patch[0].ndf.nfix_to_sminn = o[0].n_fix / 1000.0;	/* report FATES fixation as the patch's N fixation */
 	tot_area_days += patch[0].area;
 	if (site_nprev[site - 1] >= 0.0) {
-		/* FATES N change = uptake received - (litter + efflux) N sent
+		/* FATES N change = uptake received + symbiotic fixation - (litter + efflux) N sent
 		   - N burned - N exported in harvested wood - leaf N into the stream */
 		res = (o[0].n_stock - site_nprev[site - 1])
-			- (o[0].n_uptake_recv - litn - o[0].fire_n - o[0].harvest_n - exp_n) / 1000.0
+			- (o[0].n_uptake_recv + o[0].n_fix - litn - o[0].fire_n - o[0].harvest_n - exp_n) / 1000.0
 			- o[0].mb_n_other;	/* FATES-internal terms (seeds, patch resizing, ...) */
 		resize_max = max(resize_max, fabs(o[0].mb_n_resize));
 		err_max = max(err_max, fabs(o[0].mb_n_err));
@@ -499,6 +522,23 @@ void veg_host_ndemand(struct patch_object *patch, struct command_line_object *co
 	if (site == 0)
 		return;
 	patch[0].ndf.plant_potential_ndemand = site_out[site - 1].ncap / 1000.0;	/* kgN/m2/day */
+	/* -demog_nforage: AM foraging strengthens the plant claim by excess C / cost, scaled by
+	   the root-zone mineral N supply over the total demand (plant claim + microbial
+	   immobilization), capped at 1: the effective cost per g N rises as mineral N gets
+	   scarce (FUN-style active uptake), so foraging pays where mineral N is plentiful */
+	if (nforage_on) {
+		double perc, avail, dem, scale;
+		perc = (1.0 - exp(-patch[0].soil_defaults[0][0].N_decay_rate * patch[0].rootzone.depth)) /
+			(1.0 - exp(-patch[0].soil_defaults[0][0].N_decay_rate * patch[0].soil_defaults[0][0].active_zone_z));
+		perc = min(perc, 1.0);
+		if (patch[0].rootzone.depth > ZERO) perc = max(0.1, perc);
+		avail = perc * max(patch[0].soil_ns.sminn + patch[0].soil_ns.nitrate + patch[0].ndf.mineralized, 0.0);
+		dem = patch[0].ndf.plant_potential_ndemand + max(patch[0].ndf.potential_immob, 0.0);
+		scale = (dem > ZERO) ? min(1.0, avail / dem) : 1.0;
+		site_amboost[site - 1] = scale * max(site_out[site - 1].n_am_demand, 0.0) / 1000.0;
+		patch[0].ndf.plant_potential_ndemand += site_amboost[site - 1];
+		nf_dem_yr[site - 1] += 1000.0 * site_amboost[site - 1];
+	}
 }
 
 /*--------------------------------------------------------------------------*/
@@ -547,9 +587,53 @@ void veg_host_nuptake(struct patch_object *patch, struct command_line_object *co
 		}
 	}
 	patch[0].ndf.sminn_to_npool = u;
+	/* -demog_nfun: root-zone mineral N (same access fraction as resolve_sminn_competition) */
+	if (nfun_on) {
+		double perc;
+		perc = (1.0 - exp(-patch[0].soil_defaults[0][0].N_decay_rate * patch[0].rootzone.depth)) /
+			(1.0 - exp(-patch[0].soil_defaults[0][0].N_decay_rate * patch[0].soil_defaults[0][0].active_zone_z));
+		perc = min(perc, 1.0);
+		if (patch[0].rootzone.depth > ZERO) perc = max(0.1, perc);
+		site_navail[site - 1] = 1000.0 * perc * max(patch[0].soil_ns.sminn + patch[0].soil_ns.nitrate
+			+ patch[0].ndf.mineralized, 0.0);
+	}
 	no3 = min(max(patch[0].soil_ns.nitrate, 0.0), u);
 	site_no3[site - 1] = 1000.0 * no3;
 	site_nh4[site - 1] = 1000.0 * (u - no3);
+	/* -demog_nforage: the boost's share of the claim is its share of what plants got */
+	if (nforage_on) {
+		double claim = patch[0].ndf.plant_potential_ndemand;
+		site_amfrac[site - 1] = (claim > ZERO) ? min(1.0, max(site_amboost[site - 1], 0.0) / claim) : 0.0;
+		nf_n_yr[site - 1] += 1000.0 * u * site_amfrac[site - 1];
+	}
+	/* -demog_nmine: mining PFTs spend excess C (FATES excess respiration / cost) on soil organic
+	   N. SOM is decomposed in place: the same share of every soil pool's C and N is removed (pool
+	   C:N kept), the N goes to FATES tomorrow, the C is respired (added to the pools' cumulative
+	   heterotrophic-respiration sinks). At most nmine_rate of the soil organic N per year. */
+	site_mine[site - 1] = 0.0;
+	if (nmine_on) {
+		struct soil_n_object *ns = &(patch[0].soil_ns);
+		struct soil_c_object *cs = &(patch[0].soil_cs);
+		double ntot, want, f, dc;
+		ntot = max(ns->soil1n, 0.0) + max(ns->soil2n, 0.0) + max(ns->soil3n, 0.0) + max(ns->soil4n, 0.0);
+		want = max(site_out[site - 1].n_mine_demand, 0.0) / 1000.0;		/* kgN/m2/day */
+		nm_dem_yr[site - 1] += want * 1000.0;
+		nm_som_n[site - 1] = ntot * 1000.0;
+		if ((want > 0.0) && (ntot > ZERO) && (ns->soil1n >= 0.0) && (ns->soil2n >= 0.0)
+		    && (ns->soil3n >= 0.0) && (ns->soil4n >= 0.0)) {
+			f = min(want / ntot, nmine_rate / 365.0);
+			dc = f * (cs->soil1c + cs->soil2c + cs->soil3c + cs->soil4c);
+			cs->soil1c_hr_snk += f * cs->soil1c; cs->soil1c -= f * cs->soil1c;
+			cs->soil2c_hr_snk += f * cs->soil2c; cs->soil2c -= f * cs->soil2c;
+			cs->soil3c_hr_snk += f * cs->soil3c; cs->soil3c -= f * cs->soil3c;
+			cs->soil4c_hr_snk += f * cs->soil4c; cs->soil4c -= f * cs->soil4c;
+			ns->soil1n -= f * ns->soil1n; ns->soil2n -= f * ns->soil2n;
+			ns->soil3n -= f * ns->soil3n; ns->soil4n -= f * ns->soil4n;
+			site_mine[site - 1] = 1000.0 * f * ntot;
+			nm_n_yr[site - 1] += 1000.0 * f * ntot;
+			nm_c_yr[site - 1] += 1000.0 * dc;
+		}
+	}
 }
 
 /*--------------------------------------------------------------------------*/
@@ -792,6 +876,14 @@ static void atm_bc(struct basin_object *basin, struct zone_object *zone,
 	bc[0].esat_night = compute_saturation_vapor_pressure(zone[0].metv.tnight);
 	bc[0].eair_night = min(max(zone[0].e_dewpoint, 1.0), bc[0].esat_night);
 	bc[0].t_avg = zone[0].metv.tavg + VH_TFRZ;
+
+	/* -demog_diurnal shape inputs */
+	bc[0].n_diurnal = (double) host_ndiurnal;
+	bc[0].cz_a = sin(phi) * sin(delta);
+	bc[0].cz_b = cos(phi) * cos(delta);
+	bc[0].hhalf = H;
+	bc[0].tmax = zone[0].metv.tmax + VH_TFRZ;
+	bc[0].tmin = zone[0].metv.tmin + VH_TFRZ;
 }
 
 static void write_diag_header(void)
@@ -895,6 +987,16 @@ void veg_host_write_restart(const char *statefile)
 		fwrite(&site_nh4[s], sizeof(double), 1, f);
 		fwrite(&site_no3[s], sizeof(double), 1, f);
 	}
+	/* -demog_nmine: mined N still owed to FATES (optional trailing block) */
+	fwrite("NMINE001", 1, 8, f);
+	for (s = 0; s < nsites; s++)
+		fwrite(&site_mine[s], sizeof(double), 1, f);
+	fwrite("NFORG001", 1, 8, f);
+	for (s = 0; s < nsites; s++)
+		fwrite(&site_amfrac[s], sizeof(double), 1, f);
+	fwrite("NFUN0001", 1, 8, f);
+	for (s = 0; s < nsites; s++)
+		fwrite(&site_navail[s], sizeof(double), 1, f);
 	fclose(f);
 	fprintf(stderr, "FATES host: restart written: %s.fates(+_host)\n", statefile);
 }
@@ -932,7 +1034,9 @@ static void read_host_restart(const char *file)
 	if ((fread(magic, 1, 8, f) != 8) || (memcmp(magic, VH_HOST_MAGIC, 8) != 0)
 	    || (fread(&n, sizeof(int), 1, f) != 1) || (fread(&sz, sizeof(int), 1, f) != 1)
 	    || (n != nsites)
-	    || ((sz != (int) sizeof(struct veg_out)) && (sz != (int) offsetof(struct veg_out, fire_c)))
+	    || ((sz != (int) sizeof(struct veg_out)) && (sz != (int) offsetof(struct veg_out, fire_c))
+	        && (sz != (int) offsetof(struct veg_out, n_sub))
+	        && (sz != (int) offsetof(struct veg_out, n_fix)))
 	    || (fread(&mdl, sizeof(double), 1, f) != 1) || (fread(&refd, sizeof(int), 1, f) != 1)) {
 		fprintf(stderr, "FATAL ERROR: FATES host restart %s does not match this run\n", file);
 		exit(EXIT_FAILURE);
@@ -943,13 +1047,30 @@ static void read_host_restart(const char *file)
 		if ((fread(&pid, sizeof(int), 1, f) != 1) || (pid != site_pid[s])
 		    || (memset(&site_out[s], 0, sizeof(struct veg_out)) == NULL)
 		    /* pre-Phase-6 sidecars stop before fire_c (the per-day disturbance
-		       fluxes, zero-filled here) */
+		       fluxes, zero-filled here); pre-fixation sidecars stop before n_fix */
 		    || (fread(&site_out[s], (size_t) sz, 1, f) != 1)
 		    || (fread(&site_nh4[s], sizeof(double), 1, f) != 1)
 		    || (fread(&site_no3[s], sizeof(double), 1, f) != 1)) {
 			fprintf(stderr, "FATAL ERROR: FATES host restart %s: site %d (patch %d) mismatch\n",
 				file, s + 1, site_pid[s]);
 			exit(EXIT_FAILURE);
+		}
+	}
+	{	/* optional -demog_nmine block (older sidecars end here: nothing owed) */
+		char tag[8];
+		if ((fread(tag, 1, 8, f) == 8) && (memcmp(tag, "NMINE001", 8) == 0)) {
+			for (s = 0; s < nsites; s++)
+				if (fread(&site_mine[s], sizeof(double), 1, f) != 1)
+					site_mine[s] = 0.0;
+			if ((fread(tag, 1, 8, f) == 8) && (memcmp(tag, "NFORG001", 8) == 0)) {
+				for (s = 0; s < nsites; s++)
+					if (fread(&site_amfrac[s], sizeof(double), 1, f) != 1)
+						site_amfrac[s] = 0.0;
+				if ((fread(tag, 1, 8, f) == 8) && (memcmp(tag, "NFUN0001", 8) == 0))
+					for (s = 0; s < nsites; s++)
+						if (fread(&site_navail[s], sizeof(double), 1, f) != 1)
+							site_navail[s] = 0.0;
+			}
 		}
 	}
 	fclose(f);
@@ -1204,12 +1325,69 @@ void veg_host_init(struct world_object *world, struct command_line_object *comma
 	sprintf(path, "%s_fates.log",
 		(command_line[0].output_prefix != NULL) ? command_line[0].output_prefix : "rhessys");
 	log_len = strlen(path);
+	{	/* stomatal conductance model, before FATES reads its control parameters */
+		int sm = command_line[0].demog_medlyn ? 2 : 1;
+		veg_set_stomatal(&sm);
+		if (command_line[0].demog_medlyn)
+			fprintf(stderr, "FATES host: Medlyn stomatal conductance (-demog_medlyn; g1 = fates_leaf_stomatal_slope_medlyn)\n");
+		sm = command_line[0].demog_trs ? 2 : 1;
+		veg_set_regen(&sm);
+		if (command_line[0].demog_trs)
+			fprintf(stderr, "FATES host: Tree Recruitment Scheme with seedling dynamics (-demog_trs; fates_trs_* parameters)\n");
+		sm = command_line[0].demog_coage;
+		veg_set_coage(&sm);
+		if (command_line[0].demog_coage)
+			fprintf(stderr, "FATES host: cohort age tracking on (-demog_coage)\n");
+		sm = command_line[0].demog_dayl;
+		veg_set_dayl(&sm);
+		sm = command_line[0].demog_disperse;
+		veg_set_disperse(&sm);
+		if (command_line[0].demog_disperse)
+			fprintf(stderr, "FATES host: seed dispersal between neighbouring sites, %.3f m per flow-table unit (-demog_disperse)\n",
+				command_line[0].demog_disperse_cell);
+		if (command_line[0].demog_dayl)
+			fprintf(stderr, "FATES host: day-length factor on photosynthetic capacity (-demog_dayl)\n");
+		if (command_line[0].demog_wetcanopy)
+			fprintf(stderr, "FATES host: transpiration excludes the wet-canopy drying time (-demog_wetcanopy)\n");
+		veg_set_nvcmax(&command_line[0].demog_nvcmax);
+		if (command_line[0].demog_nvcmax > 0.0)
+			fprintf(stderr, "FATES host: Vcmax25/Jmax25/TPU25 x leaf N:C / target, floor %.3g (-demog_nvcmax)\n", command_line[0].demog_nvcmax);
+		if (command_line[0].demog_nmine_cost > 0.0) {
+			nmine_on = 1;
+			nmine_rate = command_line[0].demog_nmine_rate;
+			veg_set_nmine(&command_line[0].demog_nmine_cost, &command_line[0].demog_nmine_mask);
+			fprintf(stderr, "FATES host: C-paid N acquisition, %.3g gC/gN, at most %.3g of soil organic N per yr, "
+				"PFT mask %d (-demog_nmine)\n", command_line[0].demog_nmine_cost, nmine_rate,
+				command_line[0].demog_nmine_mask);
+		}
+		if (command_line[0].demog_nfun_k[0] > 0.0) {
+			nfun_on = 1;
+			veg_set_nfun(command_line[0].demog_nfun_k, &command_line[0].demog_nfun_charge, &command_line[0].demog_nfun_mask);
+			fprintf(stderr, "FATES host: FUN-style N cost kN/N + kC/root C, AM %.3g / %.3g, ECM %.3g / %.3g, "
+				"charge %d, ECM PFT mask %d (-demog_nfun)\n", command_line[0].demog_nfun_k[0],
+				command_line[0].demog_nfun_k[1], command_line[0].demog_nfun_k[2], command_line[0].demog_nfun_k[3],
+				command_line[0].demog_nfun_charge, command_line[0].demog_nfun_mask);
+		}
+		if (command_line[0].demog_nforage_cost > 0.0) {
+			nforage_on = 1;
+			veg_set_nforage(&command_line[0].demog_nforage_cost, &command_line[0].demog_nforage_mask);
+			fprintf(stderr, "FATES host: AM foraging, excess C / %.3g gC/gN added to the plant mineral-N claim, "
+				"PFT mask %d (-demog_nforage)\n", command_line[0].demog_nforage_cost, command_line[0].demog_nforage_mask);
+		}
+		veg_set_min_n(&command_line[0].demog_min_n);
+		if (command_line[0].demog_min_n > 0.0)
+			fprintf(stderr, "FATES host: cohorts below %.3g stems/ha terminated (-demog_min_n)\n", command_line[0].demog_min_n);
+		veg_set_l2fr_max(&command_line[0].demog_l2fr_max);
+		if (command_line[0].demog_l2fr_max > 0.0)
+			fprintf(stderr, "FATES host: leaf-to-fineroot ratio capped at %.2f (-demog_l2fr_max)\n", command_line[0].demog_l2fr_max);
+	}
 	veg_init(command_line[0].fates_paramfile, &pf_len, inv_mapped ? inv_ctrl : command_line[0].fates_invfile,
 		&inv_len, path, &log_len, &nlevsoil, &nlevdecomp, &command_line[0].demog_flag,
 		&nsites, &command_line[0].demog_restart);
 	{
-		int mode = command_line[0].demog_nneed + 2 * command_line[0].demog_nstore_reg;
-		veg_set_ndemand(&mode);
+		int mode = command_line[0].demog_nneed + 2 * command_line[0].demog_nstore_reg + 4 * command_line[0].demog_ncap +
+			8 * (command_line[0].demog_nsplit == 1) + 16 * (command_line[0].demog_nsplit == 2);
+		veg_set_ndemand(&mode, &command_line[0].demog_ncap_mult);
 	}
 	command_line_wood_resp = (command_line[0].demog_flag == 3) ? command_line[0].demog_wood_resp : 0.0;
 	if (command_line_wood_resp > 0.0) {
@@ -1219,8 +1397,14 @@ void veg_host_init(struct world_object *world, struct command_line_object *comma
 	}
 	if (command_line[0].demog_nneed)
 		fprintf(stderr, "FATES host: plant N demand = max(RD root capacity, potential growth N need) (-demog_nneed)\n");
+	if (command_line[0].demog_nsplit)
+		fprintf(stderr, "FATES host: granted plant N shared among cohorts by %s(RD root capacity, potential growth N need); "
+			"claim unchanged (-demog_nsplit %d)\n", (command_line[0].demog_nsplit == 2) ? "min" : "max", command_line[0].demog_nsplit);
 	if (command_line[0].demog_nstore_reg)
 		fprintf(stderr, "FATES host: plant N claim x max(0, 1 - N store / N store overflow level) per cohort (-demog_nstore_reg)\n");
+	if (command_line[0].demog_ncap)
+		fprintf(stderr, "FATES host: plant N claim capped at %.2f x (growth N need + N store refill over 30 days) per cohort (-demog_ncap)\n",
+			command_line[0].demog_ncap_mult);
 	litter_direct = (command_line[0].demog_flag == 3) && command_line[0].demog_litter_direct;
 	{
 		int f = litter_direct;
@@ -1239,6 +1423,17 @@ void veg_host_init(struct world_object *world, struct command_line_object *comma
 	site_tf = (double *) calloc(nsites, sizeof(double));
 	site_tleg = (double *) calloc(nsites, sizeof(double));
 	site_nh4 = (double *) calloc(nsites, sizeof(double));
+	site_mine = (double *) calloc(nsites, sizeof(double));
+	site_amboost = (double *) calloc(nsites, sizeof(double));
+	site_amfrac = (double *) calloc(nsites, sizeof(double));
+	site_navail = (double *) calloc(nsites, sizeof(double));
+	nu_yr = (double *) calloc((size_t) nsites * NU_NV, sizeof(double));
+	nf_dem_yr = (double *) calloc(nsites, sizeof(double));
+	nf_n_yr = (double *) calloc(nsites, sizeof(double));
+	nm_dem_yr = (double *) calloc(nsites, sizeof(double));
+	nm_n_yr = (double *) calloc(nsites, sizeof(double));
+	nm_c_yr = (double *) calloc(nsites, sizeof(double));
+	nm_som_n = (double *) calloc(nsites, sizeof(double));
 	site_no3 = (double *) calloc(nsites, sizeof(double));
 	site_nprev = (double *) calloc(nsites, sizeof(double));
 	site_legacy0 = (double *) calloc(nsites, sizeof(double));
@@ -1247,7 +1442,8 @@ void veg_host_init(struct world_object *world, struct command_line_object *comma
 		site_nprev[s] = -1.0;
 		site_legacy0[s] = -1.0;
 	}
-	if ((site_out == NULL) || (site_tf == NULL) || (site_tleg == NULL) || (site_nh4 == NULL)
+	if ((site_navail == NULL) || (nu_yr == NULL) || (site_amboost == NULL) || (site_amfrac == NULL) || (nf_dem_yr == NULL) || (nf_n_yr == NULL) || (site_mine == NULL) || (nm_dem_yr == NULL) || (nm_n_yr == NULL) || (nm_c_yr == NULL) || (nm_som_n == NULL)
+	    || (site_out == NULL) || (site_tf == NULL) || (site_tleg == NULL) || (site_nh4 == NULL)
 	    || (site_no3 == NULL) || (site_nprev == NULL) || (site_legacy0 == NULL) || (site_wresp == NULL)) {
 		fprintf(stderr, "FATAL ERROR: veg_host_init: out of memory\n");
 		exit(EXIT_FAILURE);
@@ -1300,6 +1496,59 @@ void veg_host_init(struct world_object *world, struct command_line_object *comma
 			diag_patch = smap[0].patch;
 		}
 	}
+	/*--- seed dispersal (-demog_disperse): site centroids (flow-table x, y x cell size, m) and areas ---*/
+	if (command_line[0].demog_disperse) {
+		double *dx = (double *) calloc(nsites, sizeof(double));
+		double *dy = (double *) calloc(nsites, sizeof(double));
+		double *da = (double *) calloc(nsites, sizeof(double));
+		int ns = nsites;
+		if ((dx == NULL) || (dy == NULL) || (da == NULL)) {
+			fprintf(stderr, "FATAL ERROR: veg_host_init: out of memory (dispersal)\n");
+			exit(EXIT_FAILURE);
+		}
+		for (s = 0; s < nsites; s++) {
+			int k = smap[s].site - 1;
+			dx[k] = smap[s].patch[0].flow_x * command_line[0].demog_disperse_cell;
+			dy[k] = smap[s].patch[0].flow_y * command_line[0].demog_disperse_cell;
+			da[k] = smap[s].patch[0].area;
+		}
+		veg_set_disperse_geom(&ns, dx, dy, da);
+		free(dx); free(dy); free(da);
+	}
+	/*--- -demog_browse: browse mortality of small saplings ---*/
+	if (command_line[0].demog_browse_rate > 0.0) {
+		veg_set_browse(&command_line[0].demog_browse_rate, &command_line[0].demog_browse_height,
+			&command_line[0].demog_browse_mask);
+		fprintf(stderr, "FATES host: browse mortality %.3g /yr on trees below %.3g m, PFT mask %d (-demog_browse)\n",
+			command_line[0].demog_browse_rate, command_line[0].demog_browse_height, command_line[0].demog_browse_mask);
+	}
+	/*--- -demog_suppress: growth-dependent (suppression) mortality ---*/
+	if ((command_line[0].demog_supp_gcrit > 0.0) && (command_line[0].demog_supp_npft > 0)) {
+		int k;
+		veg_set_suppress(&command_line[0].demog_supp_gcrit, &command_line[0].demog_supp_dbhmax,
+			&command_line[0].demog_supp_npft, command_line[0].demog_supp_rate, &command_line[0].demog_supp_minlayer);
+		fprintf(stderr, "FATES host: suppression mortality rate x (1 - g/%.3g cm/yr), dbh < %.3g cm, canopy layer >= %d, rate by PFT:",
+			command_line[0].demog_supp_gcrit, command_line[0].demog_supp_dbhmax, command_line[0].demog_supp_minlayer);
+		for (k = 0; k < command_line[0].demog_supp_npft; k++) fprintf(stderr, " %.3g", command_line[0].demog_supp_rate[k]);
+		fprintf(stderr, " /yr (-demog_suppress); the growth running mean is not in the restart (resets to 1 cm/yr)\n");
+	}
+	/*--- -demog_mort_disturb: per-site fates_mort_disturb_frac for the listed patches ---*/
+	if (command_line[0].demog_mdist_frac >= 0.0) {
+		int k, nset = 0;
+		for (s = 0; s < nsites; s++)
+			for (k = 0; k < command_line[0].demog_mdist_n; k++)
+				if (smap[s].patch[0].ID == command_line[0].demog_mdist_pid[k]) {
+					int site = smap[s].site;
+					veg_set_mort_disturb(&site, &command_line[0].demog_mdist_pfrac[k]);
+					nset++;
+				}
+		fprintf(stderr, "FATES host: fates_mort_disturb_frac set on %d of %d listed patches (-demog_mort_disturb):",
+			nset, command_line[0].demog_mdist_n);
+		for (k = 0; k < command_line[0].demog_mdist_n; k++)
+			fprintf(stderr, " %d=%.3g", command_line[0].demog_mdist_pid[k], command_line[0].demog_mdist_pfrac[k]);
+		fprintf(stderr, "\n");
+	}
+
 	/*--- cohort output: sites and frequency ---*/
 	coh_on = (char *) calloc(nsites, sizeof(char));
 	env = getenv("RHESSYS_FATES_COHORTS");
@@ -1364,6 +1613,24 @@ void veg_host_init(struct world_object *world, struct command_line_object *comma
 		sprintf(path3, "%s_fates_ncomp.csv",
 			(command_line[0].output_prefix != NULL) ? command_line[0].output_prefix : "rhessys");
 		fncomp = fopen(path3, "w");
+		if (command_line[0].demog_nfun_k[0] > 0.0) {
+			char path5[FILEPATH_LEN + 32];
+			sprintf(path5, "%s_fates_nfun.csv",
+				(command_line[0].output_prefix != NULL) ? command_line[0].output_prefix : "rhessys");
+			fnfun = fopen(path5, "w");
+			if (fnfun != NULL)
+				fprintf(fnfun, "year,patchID,n_am_gN_m2_yr,n_ecm_gN_m2_yr,cost_am_gC_gN,cost_ecm_gC_gN,"
+					"c_charged_gC_m2_yr,n_avail_gN_m2\n");
+		}
+		if ((command_line[0].demog_nmine_cost > 0.0) || (command_line[0].demog_nforage_cost > 0.0)) {
+			char path4[FILEPATH_LEN + 32];
+			sprintf(path4, "%s_fates_nmine.csv",
+				(command_line[0].output_prefix != NULL) ? command_line[0].output_prefix : "rhessys");
+			fnmine = fopen(path4, "w");
+			if (fnmine != NULL)
+				fprintf(fnmine, "year,patchID,demand_gN_m2_yr,mined_gN_m2_yr,som_c_released_gC_m2_yr,soil_org_n_gN_m2,"
+					"am_claim_boost_gN_m2_yr,am_won_gN_m2_yr\n");
+		}
 		if (fncomp != NULL)
 			fprintf(fncomp, "year,month,day,scope,sminn,nitrate,mineralized,potential_immob,"
 				"plant_claim,rootzone_depth,perc_inroot,avail_plant,plant_uptake,fract_immob,nlimit,litter_c\n");
@@ -1375,6 +1642,9 @@ void veg_host_init(struct world_object *world, struct command_line_object *comma
 			"water_balance,biomass_c,litter_c,n_stock,n_uptake_recv,lit_n,mb_n_uptake,mb_n_frag,mb_n_err,ncap\n");
 
 	host_mode = command_line[0].demog_flag;
+	host_ndiurnal = command_line[0].demog_diurnal;
+	if (host_ndiurnal > 1)
+		fprintf(stderr, "FATES host: daylight split into %d flux sub-steps with diurnal light, temperature and VPD (-demog_diurnal)\n", host_ndiurnal);
 	last_julday = -1;
 	fprintf(stderr, "FATES host: %d sites (vegetated patches; %d non-vegetated patches "
 		"skipped), %d soil layers, mode %d (%s); diagnostics for patch %d -> %s\n",
@@ -1590,6 +1860,29 @@ void veg_host_daily_batch(struct command_line_object *command_line, struct date 
 	fill_time(current_date, &t);
 	veg_set_time(&t);
 	last_julday = julday(current_date);
+	/* -demog_nfun: last year's totals per site (written on the first day of a new year) */
+	if (nfun_on && (fnfun != NULL) && (current_date.year != nfun_year)) {
+		if (nfun_year > 0)
+			for (s = 0; s < nsites; s++) {
+				double *q = &nu_yr[s * NU_NV];
+				fprintf(fnfun, "%ld,%d,%.5f,%.5f,%.4f,%.4f,%.5f,%.6f\n", nfun_year, site_patch[s][0].ID,
+					q[0], q[1], (q[0] > 0.0) ? q[2] / q[0] : -1.0, (q[1] > 0.0) ? q[3] / q[1] : -1.0,
+					q[4], (q[6] > 0.0) ? q[5] / q[6] : 0.0);
+				memset(q, 0, NU_NV * sizeof(double));
+			}
+		nfun_year = current_date.year;
+	}
+	/* -demog_nmine: last year's totals per site (written on the first day of a new year) */
+	if ((nmine_on || nforage_on) && (fnmine != NULL) && (current_date.year != nmine_year)) {
+		if (nmine_year > 0)
+			for (s = 0; s < nsites; s++) {
+				fprintf(fnmine, "%ld,%d,%.5f,%.5f,%.5f,%.3f,%.5f,%.5f\n", nmine_year, site_patch[s][0].ID,
+					nm_dem_yr[s], nm_n_yr[s], nm_c_yr[s], nm_som_n[s], nf_dem_yr[s], nf_n_yr[s]);
+				nm_dem_yr[s] = nm_n_yr[s] = nm_c_yr[s] = 0.0;
+				nf_dem_yr[s] = nf_n_yr[s] = 0.0;
+			}
+		nmine_year = current_date.year;
+	}
 
 	for (s = 0; s < nsites; s++) {
 		site = s + 1;
@@ -1634,6 +1927,9 @@ void veg_host_daily_batch(struct command_line_object *command_line, struct date 
 		/* mode 3: N uptake RHESSys granted yesterday */
 		site_bc[s].n_uptake_nh4 = site_nh4[s];
 		site_bc[s].n_uptake_no3 = site_no3[s];
+		site_bc[s].n_uptake_mine = (site_mine != NULL) ? site_mine[s] : 0.0;
+		site_bc[s].n_uptake_am_frac = (site_amfrac != NULL) ? site_amfrac[s] : 0.0;
+		site_bc[s].n_avail = (site_navail != NULL) ? site_navail[s] : 0.0;
 		/* Phase 6: today's TEC disturbance, if any */
 		resolve_disturbance(s, &site_bc[s]);
 		/* mode 3, stream-side patches: the share of today's fresh FATES leaf litter
@@ -1648,6 +1944,15 @@ void veg_host_daily_batch(struct command_line_object *command_line, struct date 
 	veg_do_all(&nsites, site_bc, site_out);
 	t_pack += w1 - w0;
 	t_fates += wall_now() - w1;
+	if (nfun_on)
+		for (s = 0; s < nsites; s++) {
+			double v[5];
+			int k, site1 = s + 1;
+			veg_nfun_diag(&site1, v);
+			for (k = 0; k < 5; k++) nu_yr[s * NU_NV + k] += v[k];
+			nu_yr[s * NU_NV + 5] += site_bc[s].n_avail;
+			nu_yr[s * NU_NV + 6] += 1.0;
+		}
 	for (s = 0; s < nsites; s++) {
 		sum_coh += site_out[s].ncohorts;
 		sum_pat += site_out[s].npatches;
@@ -1715,8 +2020,10 @@ void veg_host_daily(struct world_object *world, struct basin_object *basin,
 /* with the FATES daylight canopy conductance (incl. leaf boundary layer)    */
 /* and FATES canopy-absorbed shortwave, plus the overstory stratum's net     */
 /* longwave and aerodynamic conductance from today's legacy canopy step.     */
-/* Daylight only, minus the wet-canopy (rain) time, as canopy_stratum_daily_F*/
-/* does. demog_flag 2: rescale every stratum's transpiration demand so the   */
+/* Daylight only, minus the rain time; with -demog_wetcanopy also minus the  */
+/* overstory's wet-canopy drying time, as canopy_stratum_daily_F does (the   */
+/* default rule omits it, so FATES transpires while the intercepted water    */
+/* evaporates). demog_flag 2: rescale every stratum's transpiration demand so the   */
 /* patch total equals the FATES value (RHESSys's soil-water supply limits,   */
 /* sat/unsat partition and accounting then apply unchanged).                 */
 /*--------------------------------------------------------------------------*/
@@ -1743,13 +2050,39 @@ void veg_host_transpiration(struct zone_object *zone, struct patch_object *patch
 	}
 
 	tf = 0.0;
-	if ((dayl > 1.0) && (top != NULL) && (o[0].gc_canopy > 0.0) && (top[0].ga > 0.0)) {
+	if ((o[0].n_sub > 1.5) && (dayl > 1.0) && (top != NULL) && (top[0].ga > 0.0)) {
+		/* -demog_diurnal: Penman-Monteith per daylight sub-step with that step's FATES
+		   conductance, absorbed shortwave, temperature and VPD; the overstory net
+		   longwave and aerodynamic conductance stay daylight means; the rain (and
+		   wet-canopy) time is taken evenly from every sub-step */
+		int k, nk = (int) (o[0].n_sub + 0.5);
+		double avail;
+		rain_day = zone[0].rain_duration * dayl / 86400.0;
+		if (command_line[0].demog_wetcanopy)
+			rain_day += top[0].wet_canopy_time;
+		avail = max(dayl - rain_day, 0.0) / (double) nk;
+		for (k = 0; k < nk && k < VEG_NSUB_MAX; k++) {
+			if (o[0].sub_gc[k] <= 0.0) continue;
+			rnet = o[0].sub_swabs[k] + 1000.0 * top[0].Lstar_day / dayl;
+			if (rnet <= 0.0) continue;
+			rate = penman_monteith(command_line[0].verbose_flag, o[0].sub_t[k],
+				zone[0].metv.pa, max(o[0].sub_vpd[k], 0.0), rnet,
+				1.0 / o[0].sub_gc[k], 1.0 / top[0].ga, 2);		/* m/s */
+			tf += max(rate, 0.0) * avail;
+		}
+	}
+	else if ((dayl > 1.0) && (top != NULL) && (o[0].gc_canopy > 0.0) && (top[0].ga > 0.0)) {
 		rnet = o[0].swabs_canopy + 1000.0 * top[0].Lstar_day / dayl;
 		if (rnet > 0.0) {
 			rate = penman_monteith(command_line[0].verbose_flag, zone[0].metv.tday,
 				zone[0].metv.pa, zone[0].metv.vpd_day, rnet,
 				1.0 / o[0].gc_canopy, 1.0 / top[0].ga, 2);		/* m/s */
 			rain_day = zone[0].rain_duration * dayl / 86400.0;
+			/* -demog_wetcanopy: also exclude the overstory's wet-canopy	*/
+			/* drying time, as canopy_stratum_daily_F does (default off:	*/
+			/* rain time only, the original host rule)			*/
+			if (command_line[0].demog_wetcanopy)
+				rain_day += top[0].wet_canopy_time;
 			tf = max(rate, 0.0) * max(dayl - rain_day, 0.0);
 		}
 	}
@@ -1897,12 +2230,15 @@ void veg_host_finish(struct command_line_object *command_line)
 	if (fbasin != NULL) { fclose(fbasin); fbasin = NULL; }
 	if (fflux != NULL) { fclose(fflux); fflux = NULL; }
 	if (fncomp != NULL) { fclose(fncomp); fncomp = NULL; }
+	if (fnmine != NULL) { fclose(fnmine); fnmine = NULL; }
+	if (fnfun != NULL) { fclose(fnfun); fnfun = NULL; }
 	if (command_line[0].demog_flag == 3)
 		fprintf(stderr, "FATES host N/litter (mode 3, area-weighted site means per day): uptake "
-			"granted %.4f gN/m2, received by FATES %.4f; litter to RHESSys %.4f gC/m2, %.5f gN/m2; "
-			"FATES N budget |dN - (uptake - litter N - efflux N)| max %.3e mean %.3e kgN/m2 (%ld site-days); "
+			"granted %.4f gN/m2, received by FATES %.4f; symbiotic N fixation %.5f gN/m2; litter to RHESSys %.4f gC/m2, %.5f gN/m2; "
+			"FATES N budget |dN - (uptake + fixation - litter N - efflux N)| max %.3e mean %.3e kgN/m2 (%ld site-days); "
 			"legacy strata C+N max change %.3e kg/m2\n",
 			tot_area_days ? tot_up / tot_area_days : 0.0, tot_area_days ? tot_recv / tot_area_days : 0.0,
+			tot_area_days ? tot_nfix / tot_area_days : 0.0,
 			tot_area_days ? tot_litc / tot_area_days : 0.0, tot_area_days ? tot_litn / tot_area_days : 0.0,
 			nb_max, nb_n ? nb_sum / nb_n : 0.0, nb_n, leg_max);
 	if (command_line_wood_resp > 0.0)
@@ -1982,6 +2318,11 @@ void veg_host_finish(struct command_line_object *command_line)
 	free(site_tf); site_tf = NULL;
 	free(site_tleg); site_tleg = NULL;
 	free(site_nh4); free(site_no3); free(site_nprev); free(site_legacy0);
+	free(site_mine); free(nm_dem_yr); free(nm_n_yr); free(nm_c_yr); free(nm_som_n);
+	site_mine = nm_dem_yr = nm_n_yr = nm_c_yr = nm_som_n = NULL;
+	free(site_amboost); free(site_amfrac); free(nf_dem_yr); free(nf_n_yr);
+	site_amboost = site_amfrac = nf_dem_yr = nf_n_yr = NULL;
+	free(site_navail); free(nu_yr); site_navail = nu_yr = NULL;
 	site_nh4 = site_no3 = site_nprev = site_legacy0 = NULL;
 	free(site_wresp); site_wresp = NULL;
 }

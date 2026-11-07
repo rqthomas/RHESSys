@@ -560,6 +560,18 @@ double Bed_N_mineral, Bed_N_immob;        /* kg N/day - their net mineralization
 double Bed_N_limit;                       /* 0-1 - share of their potential breakdown the N supply allowed */
 double wc_NO3, wc_NH4, wc_DON, wc_DOC;     /* kg - water-column stores (well-mixed reach water; state) */
 double wc_POC, wc_PON;                     /* kg - suspended POC/PON in the reach water (state) */
+/* refractory dissolved organic matter (2026-11-06): DOC/DON above are the labile pool (bed leachate +
+   stream_lat_DOM_labile_frac of the lateral load), DOCr/DONr the refractory pool (the rest of the lateral
+   load); each decays at its own uptake velocity (stream_vf_DOM, stream_vf_DOMr) */
+double DOCr_in, DONr_in;                   /* kg/day - refractory load received from upstream reaches */
+double DOCr_out, DONr_out;                 /* kg/day - refractory load leaving the reach outlet */
+double lateral_DOCr, lateral_DONr;         /* kg/day - refractory part of lateral_DOC / lateral_DON */
+double wc_DOCr, wc_DONr;                   /* kg - refractory water-column stores (state) */
+double DOMr_dec_C;                         /* kg C/day - refractory DOC decomposed (included in DOM_dec_C) */
+double w_wet;                              /* m - bed width used for in-stream processing (hydraulic geometry or bottom_width) */
+double lag_water;                          /* m3 - water the kinematic wave has taken in but not yet released
+                                              (cumulative inflow - outflow, >= 0); always added to the solute store
+                                              volume, so solutes leave with the water (state; 2026-11-06) */
 double V_water;                            /* m3 - reach water volume (alfa Q^0.6 x length) */
 /* stream temperature (-strtemp; compute_stream_temperature.c) */
 double T_gw_mem, T_sub_mem;                /* C - running means of air temperature for groundwater / soil water (state) */
@@ -600,6 +612,9 @@ struct stream_bgc_defaults
         double f_mic;      /* (DIM) - share of streambed breakdown done by attached microbes (rest -> DOC/DON) */
         double frag_q_exp; /* (DIM) - streambed breakdown x min(1, (Q/Q_bf)^frag_q_exp): leaves on a near-dry bed barely leach or decay (0 = off) */
         double vf_nit;     /* m/day - nitrification uptake velocity for water-column NH4 -> NO3 (0 = off) */
+        double vf_DOMr;    /* m/day - refractory DOM decomposition uptake velocity (default 0) */
+        double lat_DOM_labile_frac; /* (DIM) - share of lateral DOC/DON entering the labile pool; rest refractory (default 1 = one pool) */
+        double hg_width_a, hg_width_b; /* wetted width w = a (Q m3/s)^b for in-stream processing (a = 0: bottom_width) */
         int num_lake_reaches;  /* reaches inside a lake/reservoir: no in-stream processing (pass-through) */
         int *lake_reaches;     /* their reach IDs (stream_bgc_lake_reaches <file> in the -strbgc file) */
         };
@@ -1379,7 +1394,10 @@ struct	soil_default
 	double	soil_percolation_exp;			/* (DIM) shape of that dependence on saturated thickness (1 = linear) */
 	double	gw_recharge_through_soil;			/* 1 = groundwater recharge passes through the soil: the surface solutes in the draining water go to the soil pools, and recharge carries gw_NO3_recharge_frac of the soil-water NO3 concentration (0 = surface solutes straight to groundwater, the original behaviour) */
 	double	gw_NO3_recharge_frac;				/* (DIM) 0-1: with gw_recharge_through_soil, recharge carries this fraction of the soil-water NO3 concentration */
+	double	ndep_NO3_to_soil;				/* (DIM) 0-1: share of NO3 deposition added straight to soil nitrate (as NH4 deposition is); the rest lands on the canopy and surface as before (0 = original behaviour) */
 	double	gw_DOC_recharge_max;				/* mg C/L: cap on the DOC concentration of that recharge (sorption in deeper horizons); <= 0 = no cap. DON moves at the soil DON:DOC ratio; the excess stays in the soil DOM pools */
+	double	gw_DOC_sorb_frac;				/* (DIM) 0-1: subsoil sorption of recharge DOC, initial-mass isotherm (Nodvin et al. 1986): recharge DOC = C - gw_DOC_sorb_frac x (C - gw_DOC_null_conc) for soil-water DOC C above the null point, unchanged below it. DON moves at the soil DON:DOC ratio; the sorbed DOM stays in the soil DOM pools. < 0 = off (then gw_DOC_recharge_max applies) */
+	double	gw_DOC_null_conc;				/* mg C/L: null-point DOC concentration of that isotherm (no net sorption) */
 	double	gl_c;						/* m/s */
 	double	gsurf_slope;					/* (DIM) */
 	double  gsurf_intercept;				/* m/s */
@@ -1985,6 +2003,7 @@ struct patch_object
 	//int				wuiID;
         double  x;                                                                      /* meters       */
         double  y;                                                                      /* meters       */
+        double  flow_x, flow_y;                                                         /* flow-table centroid (grid cells; -demog_disperse) */
         double  z;                                                                      /* meters       */
         double  area;                   /* sq meters    */
         double  acc_year_trans;         /* m water      */
@@ -2485,6 +2504,41 @@ struct  command_line_object
         char            fates_mgmtfile[FILEPATH_LEN];     /* FATES forest-management driver file (-demog_mgmt); empty = none */
         int             demog_nneed;                      /* 1 = growth-based FATES plant N demand (-demog_nneed), 0 = RD capacity */
         int             demog_nstore_reg;                 /* 1 = FATES plant N claim x room in each cohort's N store (-demog_nstore_reg) */
+        int             demog_nsplit;                     /* FATES plant N shared among cohorts by 1 = max, 2 = min of (RD capacity, growth N need); claim unchanged (-demog_nsplit [1|2]) */
+        int             demog_ncap;                       /* 1 = FATES plant N claim capped at demog_ncap_mult x (growth N need + N store refill) (-demog_ncap [mult]) */
+        double          demog_ncap_mult;
+        double          demog_nforage_cost;               /* > 0: FATES excess C of AM PFTs strengthens the plant mineral-N claim, gC/gN (-demog_nforage) */
+        int             demog_nforage_mask;               /* bit k-1 set: PFT k forages (-demog_nforage) */
+        double          demog_nfun_k[4];                  /* FUN-style N cost (-demog_nfun): kN_AM, kC_AM, kN_ECM, kC_ECM; kN_AM <= 0 = off */
+        int             demog_nfun_charge;                /* 1 = cohorts pay N x cost from today's NPP (-demog_nfun) */
+        int             demog_nfun_mask;                  /* bit k-1 set: PFT k is ECM, others AM (-demog_nfun) */
+        double          demog_browse_rate;                /* > 0: extra mortality (1/yr) of tree cohorts below demog_browse_height (-demog_browse) */
+        double          demog_browse_height;              /* m */
+        int             demog_browse_mask;                /* bit k-1 set: PFT k is browsed */
+        double          demog_supp_gcrit;                 /* > 0: growth-dependent mortality below this ~1-yr mean dbh growth (cm/yr) (-demog_suppress) */
+        double          demog_supp_dbhmax;                /* cm: applies to cohorts below this dbh */
+        int             demog_supp_npft;                  /* number of rates given */
+        double          demog_supp_rate[30];              /* 1/yr at zero growth, by PFT */
+        int             demog_supp_minlayer;              /* applies in this canopy layer or below (1 = all, 2 = understory) */
+        double          demog_mdist_frac;                 /* fates_mort_disturb_frac override for the listed patches (-demog_mort_disturb); < 0 = off */
+        int             demog_mdist_n;                    /* number of patch IDs in demog_mdist_pid */
+        int             demog_mdist_pid[256];             /* RHESSys patch IDs that get demog_mdist_frac */
+        double          demog_mdist_pfrac[256];           /* per listed patch: its fraction (-demog_mort_disturb may be repeated; each use appends) */
+        double          demog_nmine_cost;                 /* > 0: FATES excess C buys soil organic N at this cost (gC/gN) (-demog_nmine) */
+        double          demog_nmine_rate;                 /* max share of soil organic N mined per year (-demog_nmine) */
+        int             demog_nmine_mask;                 /* bit k-1 set: PFT k can mine (-demog_nmine) */
+        double          demog_nvcmax;                     /* > 0: Vcmax25/Jmax25/TPU25 x leaf N:C / target, floored at this (-demog_nvcmax) */
+        double          demog_min_n;                      /* > 0: FATES cohorts below this density (stems/ha) are terminated (-demog_min_n) */
+        double          demog_l2fr_max;                   /* > 0: cap on FATES's dynamic leaf-to-fineroot ratio (-demog_l2fr_max) */
+        int             demog_disperse;                   /* 1 = seed dispersal between neighbouring FATES sites (-demog_disperse <cell m>) */
+        double          demog_disperse_cell;              /* m per flow-table coordinate unit (DEM cell size) */
+        int             demog_dayl;                       /* 1 = FATES day-length factor on vcmax/jmax, (dayl/dayl_max)^2 as CLM (-demog_dayl) */
+        int             demog_coage;                      /* 1 = FATES cohort age tracking, needed for age senescence (-demog_coage) */
+        int             demog_trs;                        /* 1 = FATES Tree Recruitment Scheme with seedling dynamics (-demog_trs) */
+        int             demog_diurnal;                    /* FATES daylight flux sub-steps with a diurnal cycle (-demog_diurnal <n>; 1 = one daylight-mean step) */
+        int             soilE_litter;                     /* 1 = soil evaporation: surface conductance follows root-zone wetness (min, capped at saturation) and the litter conductance acts in series under the litter cover (-soilE_litter) */
+        int             demog_wetcanopy;                  /* 1 = FATES transpiration also excludes the wet-canopy drying time, as the legacy canopy does (-demog_wetcanopy) */
+        int             demog_medlyn;                     /* 1 = FATES Medlyn stomatal conductance instead of Ball-Berry (-demog_medlyn) */                  /* -demog_ncap multiplier on the need (default 1) */
         double          demog_wood_resp;                  /* fraction of FATES CWD fragmentation C respired by wood decay before RHESSys litter (-demog_wood_resp) */
         int             demog_litter_direct;              /* 1 = FATES fine litter into RHESSys litter pools on the day it falls, legacy filing rules (-demog_litter_direct) */
         int             routing_flag;
@@ -3156,6 +3210,7 @@ struct epconst_struct
     double froot_turnover;    /* (1/yr) annual fine root turnover fraction */
     double kfrag_base;        /* (1/day) daily coarse woody debris fragmentation rate */
     double storage_transfer_prop; /* (DIM) percent of storage allocated in a given year */
+    double fstor2tran; /* (DIM) CLM-style fraction of the (transferable) store moved to transfer pools at each annual allocation; the rest stays in the store pools for later years (1 = original: stores emptied) */
     double branch_turnover; /* (1/day) daily mortality turnover */
     double min_daily_mortality; /* (1/day) daily mortality turnover */
     double max_daily_mortality; /* (1/day) daily mortality turnover */
@@ -3390,6 +3445,7 @@ struct  canopy_strata_object
         double  ppfd_sunlit;                    /*  (umol/m2/s) PAR photon flux density */
         double  ppfd_shade;                     /*  (umol/m2/s) PAR photon flux density */
         double  potential_evaporation;                          /*  meters/day  */
+        double  wet_canopy_time;        /* s of dry daylight spent evaporating intercepted water (canopy_stratum_daily_F); used by -demog_wetcanopy */
         double  rain_stored;                                    /*  meters      */
         double  snow_stored;                                    /*  meters      */
         double  sublimation;                                    /*  meters      */

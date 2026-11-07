@@ -123,6 +123,13 @@ void	output_stream_routing(
 			stream_network[0].wc_NO3, stream_network[0].wc_NH4, stream_network[0].wc_POC, stream_network[0].wc_PON,
 			stream_network[0].Bed_mic_C, stream_network[0].Bed_N_mineral,
 			stream_network[0].Bed_N_immob, stream_network[0].Bed_N_limit);
+	/* refractory DOM pool and processing width (-strbgc; DOC_out/DON_out above are the labile pool) */
+	if (command_line[0].stream_bgc_flag == 1)
+		fprintf(outfile, " %e %e %e %e %e %e %e %f %e",
+			stream_network[0].DOCr_out, stream_network[0].DONr_out,
+			stream_network[0].lateral_DOCr, stream_network[0].lateral_DONr,
+			stream_network[0].wc_DOCr, stream_network[0].wc_DONr,
+			stream_network[0].DOMr_dec_C, stream_network[0].w_wet, stream_network[0].lag_water);
 	/* stream temperature (-strtemp): C, 0-1, m2/m2, kJ/m2/day, m3/day */
 	if (command_line[0].stream_temp_flag == 1)
 		fprintf(outfile, " %f %f %f %f %f %f %f %f %f %f %f %e %e",

@@ -1493,7 +1493,18 @@ void	canopy_stratum_daily_F(
 	/*								*/
 	/*	All of this is only done for vascular strata.		*/
 	/*--------------------------------------------------------------*/
+	/* daylight (s) spent drying the wet canopy, excluded from transpiration below;	*/
+	/* with no potential evaporation left, all non-rain daylight counts as wet.	*/
+	/* Stored for the FATES host (-demog_wetcanopy); no effect on legacy.		*/
+	stratum[0].wet_canopy_time = 0.0;
 	if  ((stratum[0].defaults[0][0].lai_stomatal_fraction > ZERO) && (stratum[0].epv.proj_lai > ZERO)){
+		if ( stratum[0].potential_evaporation > ZERO ){
+			if (potential_evaporation_rate > ZERO)
+				stratum[0].wet_canopy_time = max(dry_evaporation / potential_evaporation_rate, 0.0);
+		}
+		else
+			stratum[0].wet_canopy_time = max(zone[0].metv.dayl
+				- (zone[0].rain_duration * zone[0].metv.dayl/86400), 0.0);
 		if ( stratum[0].potential_evaporation > ZERO ){
 			transpiration  = transpiration_rate *
 				(zone[0].metv.dayl - (zone[0].rain_duration * zone[0].metv.dayl/86400) -

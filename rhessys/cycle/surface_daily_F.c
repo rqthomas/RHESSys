@@ -636,7 +636,30 @@ void		surface_daily_F(
 				patch[0].soil_defaults[0][0].gsurf_intercept);
 		}
 
-			/* printf("Gsurf is %lf from %lf %lf \n", patch[0].gsurf,    patch[0].soil_defaults[0][0].gsurf_slope, 
+		/*--------------------------------------------------------------*/
+		/* -soilE_litter: (1) the surface conductance follows root-zone	*/
+		/* wetness, storage / sat_deficit capped at 1 (the pre-2014	*/
+		/* form; the max() above keeps the ratio at ~1, so gsurf is	*/
+		/* constant however dry the soil); (2) under the litter-covered	*/
+		/* fraction the litter conductance computed above acts in series	*/
+		/* with the soil surface conductance (CLM litter resistance,	*/
+		/* Sakaguchi & Zeng 2009). Off: unchanged.				*/
+		/*--------------------------------------------------------------*/
+		if (command_line[0].soilE_litter) {
+			if (patch[0].sat_deficit > ZERO)
+				patch[0].gsurf = compute_nonvascular_stratum_conductance(
+					command_line[0].verbose_flag,
+					min(((patch[0].rootzone.depth > ZERO) ? patch[0].rz_storage : patch[0].unsat_storage)
+						+ patch[0].detention_store, patch[0].sat_deficit),
+					patch[0].sat_deficit,
+					patch[0].soil_defaults[0][0].gl_c,
+					patch[0].soil_defaults[0][0].gsurf_slope,
+					patch[0].soil_defaults[0][0].gsurf_intercept);
+			if ((litter[0].gsurf > ZERO) && (patch[0].gsurf > ZERO))
+				patch[0].gsurf = (1.0 - litter[0].cover_fraction) * patch[0].gsurf
+					+ litter[0].cover_fraction / (1.0 / patch[0].gsurf + 1.0 / litter[0].gsurf);
+		}
+			/* printf("Gsurf is %lf from %lf %lf \n", patch[0].gsurf,    patch[0].soil_defaults[0][0].gsurf_slope,
                                 patch[0].soil_defaults[0][0].gsurf_intercept); */
 		/*--------------------------------------------------------------*/
 		/*	COmpute evaporation and exfiltration RATES (m/s)	*/
@@ -652,6 +675,13 @@ void		surface_daily_F(
 									* (Kstar_direct_soil + Kstar_diffuse_soil) 
 								+ litter[0].cover_fraction
 									* (Kstar_direct_lit + Kstar_diffuse_lit);
+		{
+			int rad_diag_patch(int);
+			if (rad_diag_patch(patch[0].ID))
+				fprintf(stderr, "RADDIAG   surface: Kdir_in %.1f Kdif_in %.1f litter_cover %.3f litter_pai %.3f Kstar_soil(dir+dif) %.1f Kstar_lit %.1f -> Kstar_soil_out %.1f\n",
+					patch[0].Kdown_direct, patch[0].Kdown_diffuse, litter[0].cover_fraction, litter[0].proj_pai,
+					Kstar_direct_soil + Kstar_diffuse_soil, Kstar_direct_lit + Kstar_diffuse_lit, patch[0].Kstar_soil);
+		}
 		/* Update patch Kup with reflected fluxes from surface. */
 		/* Assumes Kup from surface gets reabsorbed by canopy so only track open surfaces. */
 		patch[0].Kup_direct += (1 - patch[0].overstory_fraction)
@@ -910,7 +940,16 @@ void		surface_daily_F(
 		/*--------------------------------------------------------------*/
 		exfiltration =	min(soil_potential_evaporation,
 			patch[0].potential_exfiltration);
-		
+		{	/* diagnostic only: env RHESSYS_RAD_DIAG=<patch ID> */
+			int rad_diag_patch(int);
+			if (rad_diag_patch(patch[0].ID))
+				fprintf(stderr, "SEDIAG %d-%02d-%02d patch %d soilPE %.6f pexfil %.6f exfil %.6f rzS %.4f S %.4f satdefz %.4f rzdepth %.4f rz %.5f gsurf %.6f ga %.5f rnet_soil %.2f litcov %.3f\n",
+					(int) current_date.year, (int) current_date.month, (int) current_date.day, patch[0].ID,
+					soil_potential_evaporation, patch[0].potential_exfiltration, exfiltration,
+					patch[0].rootzone.S, patch[0].S, patch[0].sat_deficit_z, patch[0].rootzone.depth,
+					patch[0].rz_storage, patch[0].gsurf, patch[0].ga, rnet_evap_soil, litter[0].cover_fraction);
+		}
+
 			
 		if ( patch[0].sat_deficit_z > 0 ){
 			patch[0].exfiltration_unsat_zone = exfiltration;

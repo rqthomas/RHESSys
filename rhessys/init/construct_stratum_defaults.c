@@ -167,6 +167,11 @@ struct stratum_default *construct_stratum_defaults(
 			fprintf(stderr, "\n  leaf litter C:N < leaf C:N");
 		}
 		default_object_list[i].epc.storage_transfer_prop = getDoubleParam(&paramCnt, &paramPtr, "epc.storage_transfer_prop", "%lf", 0.7, 1);
+		default_object_list[i].epc.fstor2tran = getDoubleParam(&paramCnt, &paramPtr, "epc.fstor2tran", "%lf", 1.0, 1);
+		if ((default_object_list[i].epc.fstor2tran <= 0.0) || (default_object_list[i].epc.fstor2tran > 1.0)) {
+			fprintf(stderr, "FATAL ERROR: stratum default %d: epc.fstor2tran must be in (0,1]\n", default_object_list[i].ID);
+			exit(EXIT_FAILURE);
+		}
 		default_object_list[i].epc.cpool_mort_fract = getDoubleParam(&paramCnt, &paramPtr, "epc.cpool_mort_fract", "%lf", 0.001, 1);
 		default_object_list[i].epc.hydr_mort_days0 = getDoubleParam(&paramCnt, &paramPtr, "epc.hydr_mort_days0", "%lf", 0.0, 1);
 		default_object_list[i].epc.hydr_mort_days_span = getDoubleParam(&paramCnt, &paramPtr, "epc.hydr_mort_days_span", "%lf", 300.0, 1);

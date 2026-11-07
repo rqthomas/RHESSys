@@ -261,10 +261,21 @@ struct soil_default *construct_soil_defaults(
 		default_object_list[i].sediment_OC_mixing_mass = 	getDoubleParam(&paramCnt, &paramPtr, "sediment_OC_mixing_mass", "%lf", 0.0, 1);
 		default_object_list[i].sediment_OC_frac = 	getDoubleParam(&paramCnt, &paramPtr, "sediment_OC_frac", "%lf", 0.0, 1);
 		default_object_list[i].gw_DOC_recharge_max = 	getDoubleParam(&paramCnt, &paramPtr, "gw_DOC_recharge_max", "%lf", -1.0, 1);
+		default_object_list[i].gw_DOC_sorb_frac = 	getDoubleParam(&paramCnt, &paramPtr, "gw_DOC_sorb_frac", "%lf", -1.0, 1);
+		default_object_list[i].gw_DOC_null_conc = 	getDoubleParam(&paramCnt, &paramPtr, "gw_DOC_null_conc", "%lf", 0.0, 1);
+		if ((default_object_list[i].gw_DOC_sorb_frac > 1.0) || (default_object_list[i].gw_DOC_null_conc < 0.0)) {
+			fprintf(stderr, "FATAL ERROR: gw_DOC_sorb_frac must be <= 1 and gw_DOC_null_conc >= 0 in %s\n", default_files[i]);
+			exit(EXIT_FAILURE);
+		}
 		default_object_list[i].soil_percolation_rate = 	getDoubleParam(&paramCnt, &paramPtr, "soil_percolation_rate", "%lf", 0.0, 1);
 		default_object_list[i].soil_percolation_exp = 	getDoubleParam(&paramCnt, &paramPtr, "soil_percolation_exp", "%lf", 1.0, 1);
 		default_object_list[i].gw_recharge_through_soil = 	getDoubleParam(&paramCnt, &paramPtr, "gw_recharge_through_soil", "%lf", 0.0, 1);
 		default_object_list[i].gw_NO3_recharge_frac = 	getDoubleParam(&paramCnt, &paramPtr, "gw_NO3_recharge_frac", "%lf", 1.0, 1);
+		default_object_list[i].ndep_NO3_to_soil = 	getDoubleParam(&paramCnt, &paramPtr, "ndep_NO3_to_soil", "%lf", 0.0, 1);
+		if ((default_object_list[i].ndep_NO3_to_soil < 0.0) || (default_object_list[i].ndep_NO3_to_soil > 1.0)) {
+			fprintf(stderr, "FATAL ERROR: ndep_NO3_to_soil must be 0-1 in %s\n", default_files[i]);
+			exit(EXIT_FAILURE);
+		}
 		default_object_list[i].DOC_adsorption_rate = 	getDoubleParam(&paramCnt, &paramPtr, "DOC_adsorption_rate", "%lf", 0.000023, 1);
 		default_object_list[i].DON_adsorption_rate = 	getDoubleParam(&paramCnt, &paramPtr, "DON_adsorption_rate", "%lf", 0.000001, 1);
 		default_object_list[i].interval_size = 		getDoubleParam(&paramCnt, &paramPtr, "interval_size", "%lf", INTERVAL_SIZE, 1);

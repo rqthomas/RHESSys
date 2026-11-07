@@ -41,6 +41,16 @@
 /*	through, kN = vf_N fT A_bed/V), otherwise			*/
 /*	the decomposition rate is scaled (N_limit) and the DOC/DON	*/
 /*	stores recomputed, so unused DOM flows on.			*/
+/*	Two DOM pools (2026-11-06): labile DOC/DON (bed leachate	*/
+/*	+ stream_lat_DOM_labile_frac of the lateral load; vf_DOM)	*/
+/*	and refractory DOCr/DONr (rest of the lateral load;	*/
+/*	vf_DOMr), after the reactivity classes of Mineau et al.	*/
+/*	(2016) and Wollheim et al. (2015). Both feed the same	*/
+/*	microbes (CUE, CN_mic, N limitation). Defaults (1, 0)	*/
+/*	give the single-pool model.				*/
+/*	Bed area A_bed = w x length, w = stream_hg_width_a	*/
+/*	(Q m3/s)^stream_hg_width_b (hydraulic geometry, Leopold &	*/
+/*	Maddock 1953) when a > 0, else the reach bottom_width.	*/
 /*	fT = theta^(Tstream - 20); Tstream is the reach water	*/
 /*	temperature from the caller (-strtemp T_mean, else	*/
 /*	max(2.99 + 0.72 Tair, 0)).				*/
@@ -79,6 +89,19 @@ static double store_step(double *Ms, double Iin, double r, double k, double *pro
 	return(loss * r / lam);
 }
 
+/* labile and refractory DOC/DON stores over a day from start masses M0[4] (DOC, DON, DOCr, DONr) and inputs
+   in[4], decomposition rates kl (labile) and kr (refractory) both scaled by nlim; sets the stores, out[4]
+   (outflow) and dec[4] (decomposed) */
+static void dom_step(struct stream_network_object *reach, const double M0[4], const double in[4],
+		     double r, double kl, double kr, double nlim, double out[4], double dec[4])
+{
+	reach->wc_DOC = M0[0];  reach->wc_DON = M0[1];  reach->wc_DOCr = M0[2];  reach->wc_DONr = M0[3];
+	out[0] = store_step(&(reach->wc_DOC), in[0], r, kl * nlim, &dec[0]);
+	out[1] = store_step(&(reach->wc_DON), in[1], r, kl * nlim, &dec[1]);
+	out[2] = store_step(&(reach->wc_DOCr), in[2], r, kr * nlim, &dec[2]);
+	out[3] = store_step(&(reach->wc_DONr), in[3], r, kr * nlim, &dec[3]);
+}
+
 /* immobilize amount (kg N) from the reach water: NH4 first, then NO3, out of the
    outflow and the store in proportion (uptake lowers both what leaves and what stays) */
 static void take_N(struct stream_network_object *reach, double *outNH4, double *outNO3, double amount)
@@ -103,21 +126,27 @@ int stream_bgc_is_lake(int reach_ID, struct stream_bgc_defaults *p)
 }
 
 void compute_stream_bgc(struct stream_network_object *reach,
-			double NO3, double NH4, double DON, double DOC,   /* water-column inputs (upstream + lateral), kg/day */
+			double NO3, double NH4, double DON, double DOC,   /* water-column inputs (upstream + lateral), kg/day; DON/DOC = labile pool */
+			double DONr, double DOCr,                         /* refractory DOM inputs (upstream + lateral), kg/day */
 			double POC_in, double PON_in,                    /* suspended POC/PON inputs (upstream + eroded sediment) */
 			double lat_POC, double lat_PON,                  /* leaf litter into the channel (to the streambed) */
 			double Q, double V, double Tstream,              /* outflow m3/day, water volume m3, water temperature C */
 			struct stream_bgc_defaults *p)
 {
-	double fT, A_bed, r, kdep, kdec, kden, kN, fN, knit, nit;
+	double fT, A_bed, r, kdep, kdec, kdecr, kden, kN, fN, knit, nit, w;
+	double M0[4], din[4], dout[4], ddec[4];
 	double fragC, fragN, fexp, entC, entN, rr;
 	double outNO3, outNH4, outDON, outDOC, outPOC, outPON;
 	double depC, depN, decC, decN, den;
-	double netN, need, supply, nlim, immob, bioC, bioN, M0DOC, M0DON;
+	double netN, need, supply, nlim, immob, bioC, bioN;
 	double brkC, brkN, micC, micN, supply_tot, netNb, needb, availb, fb;
 
 	fT = pow(p->theta, Tstream - 20.0);
-	A_bed = reach->bottom_width * reach->length;
+	/* bed width for processing: hydraulic geometry (wetted width shrinks with flow) or the channel bottom */
+	if (p->hg_width_a > 0.0) w = (Q > 0.0) ? p->hg_width_a * pow(Q / 86400.0, p->hg_width_b) : 0.0;
+	else w = reach->bottom_width;
+	reach->w_wet = w;
+	A_bed = w * reach->length;
 	reach->V_water = V;
 
 	/* water-column turnover and process rates (1/day) */
@@ -127,10 +156,11 @@ void compute_stream_bgc(struct stream_network_object *reach,
 	if (V > STREAM_TINY) {
 		kdep = p->v_dep * fT * A_bed / V;
 		kdec = p->vf_DOM * fT * A_bed / V;
+		kdecr = p->vf_DOMr * fT * A_bed / V;
 		kden = p->vf_denit * fT * A_bed / V;
 		kN = p->vf_N * fT * A_bed / V;
 		knit = p->vf_nit * fT * A_bed / V;
-	} else kdep = kdec = kden = kN = knit = 0.0;
+	} else kdep = kdec = kdecr = kden = kN = knit = 0.0;
 
 	/* 1. streambed store: leaf litter in, fragmentation and entrainment out */
 	reach->benthic_POC += lat_POC;
@@ -160,9 +190,11 @@ void compute_stream_bgc(struct stream_network_object *reach,
 	/* 2. water-column stores: inflow, outflow and first-order processes */
 	outPOC = store_step(&(reach->wc_POC), POC_in + entC, r, kdep, &depC);
 	outPON = store_step(&(reach->wc_PON), PON_in + entN, r, kdep, &depN);
-	M0DOC = reach->wc_DOC;  M0DON = reach->wc_DON;
-	outDOC = store_step(&(reach->wc_DOC), DOC + fragC, r, kdec, &decC);
-	outDON = store_step(&(reach->wc_DON), DON + fragN, r, kdec, &decN);
+	/* DOM: bed leachate joins the labile pool */
+	M0[0] = reach->wc_DOC;  M0[1] = reach->wc_DON;  M0[2] = reach->wc_DOCr;  M0[3] = reach->wc_DONr;
+	din[0] = DOC + fragC;  din[1] = DON + fragN;  din[2] = DOCr;  din[3] = DONr;
+	dom_step(reach, M0, din, r, kdec, kdecr, 1.0, dout, ddec);
+	decC = ddec[0] + ddec[2];  decN = ddec[1] + ddec[3];
 	/* NH4 first: nitrification (vf_nit) is its first-order process; the nitrified N joins
 	   the same day's NO3 input (then flows out or is stored and denitrified like any NO3) */
 	outNH4 = store_step(&(reach->wc_NH4), NH4, r, knit, &nit);
@@ -193,20 +225,19 @@ void compute_stream_bgc(struct stream_network_object *reach,
 			   DOC/DON stores, so DOM that microbes cannot use flows on
 			   (a few passes: the slower rate changes the decomposed amount) */
 			int it;
-			double kd;
 			nlim = (need > 0.0) ? supply / need : 1.0;
 			for (it = 0; it < 4; it++) {
-				kd = kdec * nlim;
-				reach->wc_DOC = M0DOC;  reach->wc_DON = M0DON;
-				outDOC = store_step(&(reach->wc_DOC), DOC + fragC, r, kd, &decC);
-				outDON = store_step(&(reach->wc_DON), DON + fragN, r, kd, &decN);
+				dom_step(reach, M0, din, r, kdec, kdecr, nlim, dout, ddec);
+				decC = ddec[0] + ddec[2];  decN = ddec[1] + ddec[3];
 				need = p->CUE * decC / p->CN_mic - decN;
 				if ((need <= supply) || (need <= 0.0)) break;
 				nlim *= supply / need;
 			}
 			if (need > supply) {   /* remaining small excess: return it to the store */
 				double f = (need > 0.0) ? supply / need : 1.0;
-				reach->wc_DOC += (1.0 - f) * decC;  reach->wc_DON += (1.0 - f) * decN;
+				reach->wc_DOC += (1.0 - f) * ddec[0];  reach->wc_DON += (1.0 - f) * ddec[1];
+				reach->wc_DOCr += (1.0 - f) * ddec[2];  reach->wc_DONr += (1.0 - f) * ddec[3];
+				ddec[0] *= f;  ddec[1] *= f;  ddec[2] *= f;  ddec[3] *= f;
 				decC *= f;  decN *= f;  need = supply;
 				nlim *= f;
 			}
@@ -245,7 +276,10 @@ void compute_stream_bgc(struct stream_network_object *reach,
 
 	/* outlet loads and diagnostics */
 	reach->NO3_out = outNO3;  reach->NH4_out = outNH4;
+	outDOC = dout[0];  outDON = dout[1];
 	reach->DON_out = outDON;  reach->DOC_out = outDOC;
+	reach->DOCr_out = dout[2];  reach->DONr_out = dout[3];
+	reach->DOMr_dec_C = ddec[2];
 	reach->POC_out = outPOC;  reach->PON_out = outPON;
 	reach->POC_deposit = depC;   reach->POC_entrain = entC;
 	reach->Frag_C = fragC;       reach->Frag_N = fragN;

@@ -1281,6 +1281,8 @@ clean:
 
 clobber:
 	rm -f $(OBJECTS) $(PGM)
+	# FATES binding objects + modules are not in OBJECTS; a stale module breaks the next FATES build
+	rm -f $(OBJ)/rhessys_fates.o $(OBJ)/rhessys_fates_mgmt.o rhessys_fates.mod rhessys_fates_mgmt.mod
 
 functest: rhessys
 	# Run Python-based functional testing

@@ -32,7 +32,23 @@ static void dummy_veg_mgmt_init(const char *f, size_t *fl, int *n, int *p, int *
 { (void)f; (void)fl; (void)n; (void)p; (void)z; (void)h; }
 static void dummy_veg_leaf_c(int *s, double *l) { (void)s; if (l) *l = 0.0; }
 static void dummy_veg_inv_assign(int *n, int *i) { (void)n; (void)i; }
-static void dummy_veg_set_ndemand(int *m) { (void)m; }
+static void dummy_veg_set_ndemand(int *m, double *x) { (void)m; (void)x; }
+static void dummy_veg_set_stomatal(int *m) { (void)m; }
+static void dummy_veg_set_regen(int *m) { (void)m; }
+static void dummy_veg_set_coage(int *m) { (void)m; }
+static void dummy_veg_set_dayl(int *m) { (void)m; }
+static void dummy_veg_set_disperse(int *m) { (void)m; }
+static void dummy_veg_set_disperse_geom(int *n, double *x, double *y, double *a) { (void)n; (void)x; (void)y; (void)a; }
+static void dummy_veg_set_l2fr_max(double *x) { (void)x; }
+static void dummy_veg_set_min_n(double *x) { (void)x; }
+static void dummy_veg_set_nvcmax(double *x) { (void)x; }
+static void dummy_veg_set_nmine(double *x, int *m) { (void)x; (void)m; }
+static void dummy_veg_set_nforage(double *x, int *m) { (void)x; (void)m; }
+static void dummy_veg_set_nfun(double *k, int *c, int *m) { (void)k; (void)c; (void)m; }
+static void dummy_veg_nfun_diag(int *s, double *v) { int k; (void)s; for (k = 0; k < 5; k++) v[k] = 0.0; }
+static void dummy_veg_set_mort_disturb(int *s, double *f) { (void)s; (void)f; }
+static void dummy_veg_set_browse(double *r, double *h, int *m) { (void)r; (void)h; (void)m; }
+static void dummy_veg_set_suppress(double *g, double *d, int *n, double *r, int *l) { (void)g; (void)d; (void)n; (void)r; (void)l; }
 static void dummy_veg_site_nneed(int *s, double *n) { (void)s; if (n) *n = 0.0; }
 static void dummy_veg_litter_src(int *s, double *v) { int k; (void)s; for (k = 0; k < 10; k++) v[k] = 0.0; }
 static void dummy_veg_set_leaf_export(int *s, double *f) { (void)s; (void)f; }
@@ -69,6 +85,22 @@ veg_mgmt_init_t     p_veg_mgmt_init     = dummy_veg_mgmt_init;
 veg_leaf_c_t        p_veg_leaf_c        = dummy_veg_leaf_c;
 veg_inv_assign_t    p_veg_inv_assign    = dummy_veg_inv_assign;
 veg_set_ndemand_t   p_veg_set_ndemand   = dummy_veg_set_ndemand;
+veg_set_stomatal_t  p_veg_set_stomatal  = dummy_veg_set_stomatal;
+veg_set_regen_t     p_veg_set_regen     = dummy_veg_set_regen;
+veg_set_coage_t     p_veg_set_coage     = dummy_veg_set_coage;
+veg_set_dayl_t      p_veg_set_dayl      = dummy_veg_set_dayl;
+veg_set_disperse_t  p_veg_set_disperse  = dummy_veg_set_disperse;
+veg_set_disperse_geom_t p_veg_set_disperse_geom = dummy_veg_set_disperse_geom;
+veg_set_l2fr_max_t  p_veg_set_l2fr_max  = dummy_veg_set_l2fr_max;
+veg_set_min_n_t     p_veg_set_min_n     = dummy_veg_set_min_n;
+veg_set_nvcmax_t    p_veg_set_nvcmax    = dummy_veg_set_nvcmax;
+veg_set_nmine_t     p_veg_set_nmine     = dummy_veg_set_nmine;
+veg_set_nforage_t   p_veg_set_nforage   = dummy_veg_set_nforage;
+veg_set_nfun_t      p_veg_set_nfun      = dummy_veg_set_nfun;
+veg_nfun_diag_t     p_veg_nfun_diag     = dummy_veg_nfun_diag;
+veg_set_mort_disturb_t p_veg_set_mort_disturb = dummy_veg_set_mort_disturb;
+veg_set_browse_t   p_veg_set_browse   = dummy_veg_set_browse;
+veg_set_suppress_t p_veg_set_suppress = dummy_veg_set_suppress;
 veg_site_nneed_t    p_veg_site_nneed    = dummy_veg_site_nneed;
 veg_litter_src_t    p_veg_litter_src    = dummy_veg_litter_src;
 veg_set_leaf_export_t p_veg_set_leaf_export = dummy_veg_set_leaf_export;
@@ -87,7 +119,23 @@ void rhessys_veg_restart_read(const char *f, size_t *fl, struct veg_out *o);
 void rhessys_veg_mgmt_init(const char *f, size_t *fl, int *n, int *p, int *z, int *h);
 void rhessys_veg_leaf_c(int *s, double *l);
 void rhessys_veg_inv_assign(int *n, int *i);
-void rhessys_veg_set_ndemand(int *m);
+void rhessys_veg_set_ndemand(int *m, double *x);
+void rhessys_veg_set_stomatal(int *m);
+void rhessys_veg_set_regen(int *m);
+void rhessys_veg_set_coage(int *m);
+void rhessys_veg_set_dayl(int *m);
+void rhessys_veg_set_disperse(int *m);
+void rhessys_veg_set_disperse_geom(int *n, double *x, double *y, double *a);
+void rhessys_veg_set_l2fr_max(double *x);
+void rhessys_veg_set_min_n(double *x);
+void rhessys_veg_set_nvcmax(double *x);
+void rhessys_veg_set_nmine(double *x, int *m);
+void rhessys_veg_set_nforage(double *x, int *m);
+void rhessys_veg_set_nfun(double *k, int *c, int *m);
+void rhessys_veg_nfun_diag(int *s, double *v);
+void rhessys_veg_set_mort_disturb(int *s, double *f);
+void rhessys_veg_set_browse(double *r, double *h, int *m);
+void rhessys_veg_set_suppress(double *g, double *d, int *n, double *r, int *l);
 void rhessys_veg_site_nneed(int *s, double *n);
 void rhessys_veg_litter_src(int *s, double *v);
 void rhessys_veg_set_leaf_export(int *s, double *f);
@@ -124,6 +172,22 @@ int prime_veg(const char *which)
         p_veg_leaf_c        = dummy_veg_leaf_c;
         p_veg_inv_assign    = dummy_veg_inv_assign;
         p_veg_set_ndemand   = dummy_veg_set_ndemand;
+        p_veg_set_stomatal  = dummy_veg_set_stomatal;
+        p_veg_set_regen     = dummy_veg_set_regen;
+        p_veg_set_coage     = dummy_veg_set_coage;
+        p_veg_set_dayl      = dummy_veg_set_dayl;
+        p_veg_set_disperse  = dummy_veg_set_disperse;
+        p_veg_set_disperse_geom = dummy_veg_set_disperse_geom;
+        p_veg_set_l2fr_max  = dummy_veg_set_l2fr_max;
+        p_veg_set_min_n     = dummy_veg_set_min_n;
+        p_veg_set_nvcmax    = dummy_veg_set_nvcmax;
+        p_veg_set_nmine     = dummy_veg_set_nmine;
+        p_veg_set_nforage   = dummy_veg_set_nforage;
+        p_veg_set_nfun      = dummy_veg_set_nfun;
+        p_veg_nfun_diag     = dummy_veg_nfun_diag;
+        p_veg_set_mort_disturb = dummy_veg_set_mort_disturb;
+        p_veg_set_browse   = dummy_veg_set_browse;
+        p_veg_set_suppress = dummy_veg_set_suppress;
         p_veg_site_nneed    = dummy_veg_site_nneed;
         p_veg_litter_src    = dummy_veg_litter_src;
         p_veg_set_leaf_export = dummy_veg_set_leaf_export;
@@ -151,6 +215,22 @@ int prime_veg(const char *which)
         p_veg_leaf_c        = rhessys_veg_leaf_c;
         p_veg_inv_assign    = rhessys_veg_inv_assign;
         p_veg_set_ndemand   = rhessys_veg_set_ndemand;
+        p_veg_set_stomatal  = rhessys_veg_set_stomatal;
+        p_veg_set_regen     = rhessys_veg_set_regen;
+        p_veg_set_coage     = rhessys_veg_set_coage;
+        p_veg_set_dayl      = rhessys_veg_set_dayl;
+        p_veg_set_disperse  = rhessys_veg_set_disperse;
+        p_veg_set_disperse_geom = rhessys_veg_set_disperse_geom;
+        p_veg_set_l2fr_max  = rhessys_veg_set_l2fr_max;
+        p_veg_set_min_n     = rhessys_veg_set_min_n;
+        p_veg_set_nvcmax    = rhessys_veg_set_nvcmax;
+        p_veg_set_nmine     = rhessys_veg_set_nmine;
+        p_veg_set_nforage   = rhessys_veg_set_nforage;
+        p_veg_set_nfun      = rhessys_veg_set_nfun;
+        p_veg_nfun_diag     = rhessys_veg_nfun_diag;
+        p_veg_set_mort_disturb = rhessys_veg_set_mort_disturb;
+        p_veg_set_browse   = rhessys_veg_set_browse;
+        p_veg_set_suppress = rhessys_veg_set_suppress;
         p_veg_site_nneed    = rhessys_veg_site_nneed;
         p_veg_litter_src    = rhessys_veg_litter_src;
         p_veg_set_leaf_export = rhessys_veg_set_leaf_export;

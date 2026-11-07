@@ -124,7 +124,7 @@ void	read_stream_routing_state(
 	{
 		int found = 0, found_t = 0, nt;
 		double Tw, Tg, Ts;
-		double bPOC, bPON, wc[6];
+		double bPOC, bPON, wc[9];
 		char line[1024];
 		int nwc;
 		while (fscanf(world_file, "%s", token) == 1) {
@@ -177,12 +177,14 @@ void	read_stream_routing_state(
 				}
 				/* water-column stores follow on the same line (state files from
 				   2026-10-08 on); older records have only the streambed store */
-				wc[0] = wc[1] = wc[2] = wc[3] = wc[4] = wc[5] = 0.0;
+				/* 8 values from 2026-11-06 on (+ refractory wc_DONr, wc_DOCr); 6-value records leave them empty */
+				/* 9th value from 2026-11-06 on: lag_water (kinematic-wave lag water in the solute store) */
+				wc[0] = wc[1] = wc[2] = wc[3] = wc[4] = wc[5] = wc[6] = wc[7] = wc[8] = 0.0;
 				if (fgets(line, sizeof(line), world_file) != NULL)
-					nwc = sscanf(line, "%lf %lf %lf %lf %lf %lf", &wc[0], &wc[1], &wc[2], &wc[3], &wc[4], &wc[5]);
+					nwc = sscanf(line, "%lf %lf %lf %lf %lf %lf %lf %lf %lf", &wc[0], &wc[1], &wc[2], &wc[3], &wc[4], &wc[5], &wc[6], &wc[7], &wc[8]);
 				else nwc = 0;
-				if ((nwc != 6) && (nwc > 0)) {
-					fprintf(stderr, "FATAL ERROR: in read_stream_routing_state, stream_benthic_state record %d has %d water-column values (expected 6)\n", i, nwc);
+				if ((nwc != 6) && (nwc != 8) && (nwc != 9) && (nwc > 0)) {
+					fprintf(stderr, "FATAL ERROR: in read_stream_routing_state, stream_benthic_state record %d has %d water-column values (expected 6, 8 or 9)\n", i, nwc);
 					exit(EXIT_FAILURE);
 				}
 				if ((stream_list == NULL) || (stream_list->stream_network == NULL)) continue;
@@ -196,6 +198,9 @@ void	read_stream_routing_state(
 						stream_list->stream_network[k].wc_DOC = wc[3];
 						stream_list->stream_network[k].wc_POC = wc[4];
 						stream_list->stream_network[k].wc_PON = wc[5];
+						stream_list->stream_network[k].wc_DONr = wc[6];
+						stream_list->stream_network[k].wc_DOCr = wc[7];
+						stream_list->stream_network[k].lag_water = wc[8];
 						break;
 					}
 			}

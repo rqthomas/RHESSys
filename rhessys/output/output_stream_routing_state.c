@@ -72,9 +72,9 @@ void	output_stream_routing_state(
 		fprintf(outfile, "\n   %-30d %s", stream_list->num_reaches, "num_stream_reaches");
 		for (i=0; i < stream_list->num_reaches; i++) {
 			reach = &(stream_list->stream_network[i]);
-			fprintf(outfile, "\n   %d %.17g %.17g %.17g %.17g %.17g %.17g %.17g %.17g", reach->reach_ID,
+			fprintf(outfile, "\n   %d %.17g %.17g %.17g %.17g %.17g %.17g %.17g %.17g %.17g %.17g %.17g", reach->reach_ID,
 				reach->benthic_POC, reach->benthic_PON, reach->wc_NO3, reach->wc_NH4,
-				reach->wc_DON, reach->wc_DOC, reach->wc_POC, reach->wc_PON);
+				reach->wc_DON, reach->wc_DOC, reach->wc_POC, reach->wc_PON, reach->wc_DONr, reach->wc_DOCr, reach->lag_water);
 		}
 	}
 	/* stream temperature (-strtemp only): reach_ID T_mean T_gw_mem T_sub_mem; the restart

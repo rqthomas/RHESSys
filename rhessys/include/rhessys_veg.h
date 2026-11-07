@@ -40,6 +40,7 @@
 /* struct sizes shared with the Fortran mirror */
 #define VEG_NLEV_MAX 10      /* max soil layers handed to the backend */
 #define VEG_NSWB     2       /* shortwave bands: 1 = visible, 2 = near-IR */
+#define VEG_NSUB_MAX 12      /* max daylight flux sub-steps (-demog_diurnal) */
 
 #ifndef _FORTRAN_SOURCE_
 /*==========================================================================*/
@@ -114,6 +115,19 @@ struct veg_bc {
 	   m2 burned (kgC/m2), and WMFire's severity parameters (stratum / soil defaults) */
 	double	wm_frac, wm_burn, wm_litter_consumed;
 	double	wm_under_mort, wm_consumption, wm_over_k1, wm_over_k2, wm_under_h, wm_over_h;
+	/* -demog_nmine: soil organic N the host granted yesterday to C-paid acquisition (gN/m2/day) */
+	double	n_uptake_mine;
+	/* -demog_nforage: share of yesterday's granted NH4 + NO3 won by AM foraging (to forager cohorts) */
+	double	n_uptake_am_frac;
+	/* -demog_nfun: yesterday's root-zone mineral N available to plants (gN/m2), the N term of the
+	   FUN-style uptake cost */
+	double	n_avail;
+	/* -demog_diurnal: daylight flux sub-steps (<= 1: one daylight-mean step) and the
+	   diurnal shape inputs: cos(zenith) = cz_a + cz_b cos(hour angle), sunset hour angle
+	   hhalf (rad); daily tmax, tmin (K) for the temperature cycle */
+	double	n_diurnal;
+	double	cz_a, cz_b, hhalf;
+	double	tmax, tmin;
 };
 
 /*--------------------------------------------------------------------------*/
@@ -164,6 +178,20 @@ struct veg_out {
 	   generic in - out, patch_resize_err (mass FATES gains/loses when it
 	   resizes patches, e.g. at logging), - herbivory, - land-use products */
 	double	mb_n_other, mb_n_resize;
+	/* (gN/m2/day) symbiotic N fixation by FATES cohorts today (fates_cnp_nfix1 > 0): an N input
+	   to FATES that is not taken from RHESSys soil mineral N */
+	double	n_fix;
+	/* -demog_nmine (gN/m2/day): today's demand = excess C of mining PFTs / cost; mined N the
+	   cohorts received today */
+	double	n_mine_demand, n_mine_recv;
+	/* -demog_nforage (gN/m2/day): extra mineral-N claim = excess C of foraging PFTs / cost; N the
+	   forager cohorts received today through it */
+	double	n_am_demand, n_am_recv;
+	/* -demog_diurnal: number of daylight sub-steps run today (0 or 1: the single
+	   daylight-mean step) and per sub-step canopy conductance (m/s), absorbed
+	   shortwave (W/m2), air temperature (C) and VPD (Pa) for the host transpiration */
+	double	n_sub;
+	double	sub_gc[VEG_NSUB_MAX], sub_swabs[VEG_NSUB_MAX], sub_t[VEG_NSUB_MAX], sub_vpd[VEG_NSUB_MAX];
 };
 
 /* Model time (FATES SetFatesTime); day_of_year is 1-based (1 = 1 Jan) as in CLM. */
@@ -189,8 +217,37 @@ typedef void (*veg_restart_read_t)(const char *file, size_t *flen, struct veg_ou
 /* per-patch inventories: inventory index (0-based, as listed in the generated FATES
    control file) of every site, before the cold start */
 typedef void (*veg_inv_assign_t)(int *nsites, int *idx);
-/* plant N demand mode: 0 = RD capacity, 1 = max(capacity, potential growth need) */
-typedef void (*veg_set_ndemand_t)(int *mode);
+/* plant N demand mode (bit mask, see rhessys_fates.F90 ndemand_mode) and the -demog_ncap need multiplier */
+typedef void (*veg_set_ndemand_t)(int *mode, double *ncap_mult);
+/* FATES stomatal conductance model, set before veg_init: 1 = Ball-Berry, 2 = Medlyn */
+typedef void (*veg_set_stomatal_t)(int *model);
+/* FATES regeneration model, set before veg_init: 1 = default, 2 = TRS with seedling dynamics */
+typedef void (*veg_set_regen_t)(int *model);
+/* FATES cohort age tracking, set before veg_init: 0 = off, 1 = on */
+typedef void (*veg_set_coage_t)(int *on);
+/* FATES day-length factor on photosynthetic capacity, set before veg_init: 0 = off, 1 = on */
+typedef void (*veg_set_dayl_t)(int *on);
+/* FATES seed dispersal between sites: on/off before veg_init; site geometry (centroid x, y in m, area
+   in m2, by FATES site index) after it */
+typedef void (*veg_set_disperse_t)(int *on);
+typedef void (*veg_set_disperse_geom_t)(int *nsites, double *x, double *y, double *area);
+/* upper bound on FATES's dynamic leaf-to-fineroot ratio (<= 0: none) */
+typedef void (*veg_set_l2fr_max_t)(double *l2fr_max);
+typedef void (*veg_set_min_n_t)(double *min_n);
+typedef void (*veg_set_nvcmax_t)(double *floor);
+typedef void (*veg_set_nmine_t)(double *cost, int *mask);
+typedef void (*veg_set_nforage_t)(double *cost, int *mask);
+/* -demog_nfun: k[4] = kN_AM, kC_AM, kN_ECM, kC_ECM; charge 0/1; ECM PFT bit mask */
+typedef void (*veg_set_nfun_t)(double *k, int *charge, int *mask);
+/* -demog_nfun: today's site terms (g/m2/day): N to AM cohorts, N to ECM cohorts, sum N x cost AM,
+   sum N x cost ECM, C charged to NPP */
+typedef void (*veg_nfun_diag_t)(int *site, double *v);
+/* -demog_mort_disturb: per-site fates_mort_disturb_frac override (FATES host patch; < 0 = parameter) */
+typedef void (*veg_set_mort_disturb_t)(int *site, double *frac);
+/* -demog_browse: rate (1/yr), height (m), PFT bit mask (FATES host patch) */
+typedef void (*veg_set_browse_t)(double *rate, double *height, int *mask);
+/* -demog_suppress: critical dbh growth (cm/yr), max dbh (cm), n PFTs, rate by PFT (1/yr), min canopy layer (FATES host patch) */
+typedef void (*veg_set_suppress_t)(double *gcrit, double *dbhmax, int *npft, double *rate, int *minlayer);
 /* site potential growth N need (kgN/m2/day) */
 typedef void (*veg_site_nneed_t)(int *site, double *need);
 /* today's FATES litter by source (g/m2/day): C leaf, seed, AG CWD, fine root, BG CWD; then N likewise */
@@ -238,6 +295,22 @@ extern veg_mgmt_init_t     p_veg_mgmt_init;
 extern veg_leaf_c_t        p_veg_leaf_c;
 extern veg_inv_assign_t    p_veg_inv_assign;
 extern veg_set_ndemand_t   p_veg_set_ndemand;
+extern veg_set_stomatal_t  p_veg_set_stomatal;
+extern veg_set_regen_t     p_veg_set_regen;
+extern veg_set_coage_t     p_veg_set_coage;
+extern veg_set_dayl_t      p_veg_set_dayl;
+extern veg_set_disperse_t  p_veg_set_disperse;
+extern veg_set_disperse_geom_t p_veg_set_disperse_geom;
+extern veg_set_l2fr_max_t  p_veg_set_l2fr_max;
+extern veg_set_min_n_t     p_veg_set_min_n;
+extern veg_set_nvcmax_t    p_veg_set_nvcmax;
+extern veg_set_nmine_t     p_veg_set_nmine;
+extern veg_set_nforage_t   p_veg_set_nforage;
+extern veg_set_nfun_t      p_veg_set_nfun;
+extern veg_nfun_diag_t     p_veg_nfun_diag;
+extern veg_set_mort_disturb_t p_veg_set_mort_disturb;
+extern veg_set_browse_t   p_veg_set_browse;
+extern veg_set_suppress_t p_veg_set_suppress;
 extern veg_site_nneed_t    p_veg_site_nneed;
 extern veg_litter_src_t    p_veg_litter_src;
 extern veg_set_leaf_export_t p_veg_set_leaf_export;
@@ -261,6 +334,22 @@ extern veg_cwd_frac_t      p_veg_cwd_frac;
 #define veg_leaf_c        (*p_veg_leaf_c)
 #define veg_inv_assign    (*p_veg_inv_assign)
 #define veg_set_ndemand   (*p_veg_set_ndemand)
+#define veg_set_stomatal  (*p_veg_set_stomatal)
+#define veg_set_regen     (*p_veg_set_regen)
+#define veg_set_coage     (*p_veg_set_coage)
+#define veg_set_dayl      (*p_veg_set_dayl)
+#define veg_set_disperse  (*p_veg_set_disperse)
+#define veg_set_disperse_geom (*p_veg_set_disperse_geom)
+#define veg_set_l2fr_max  (*p_veg_set_l2fr_max)
+#define veg_set_min_n     (*p_veg_set_min_n)
+#define veg_set_nvcmax    (*p_veg_set_nvcmax)
+#define veg_set_nmine     (*p_veg_set_nmine)
+#define veg_set_nforage   (*p_veg_set_nforage)
+#define veg_set_nfun      (*p_veg_set_nfun)
+#define veg_nfun_diag     (*p_veg_nfun_diag)
+#define veg_set_mort_disturb (*p_veg_set_mort_disturb)
+#define veg_set_browse    (*p_veg_set_browse)
+#define veg_set_suppress  (*p_veg_set_suppress)
 #define veg_site_nneed    (*p_veg_site_nneed)
 #define veg_litter_src    (*p_veg_litter_src)
 #define veg_set_leaf_export (*p_veg_set_leaf_export)

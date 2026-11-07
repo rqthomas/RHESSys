@@ -114,6 +114,39 @@ struct	command_line_object	*construct_command_line(
 	command_line[0].fates_mgmtfile[0] = '\0';
 	command_line[0].demog_nneed = 0;
 	command_line[0].demog_nstore_reg = 0;
+	command_line[0].demog_ncap = 0;
+	command_line[0].demog_nsplit = 0;
+	command_line[0].demog_ncap_mult = 1.0;
+	command_line[0].demog_medlyn = 0;
+	command_line[0].demog_wetcanopy = 0;
+	command_line[0].soilE_litter = 0;
+	command_line[0].demog_diurnal = 1;
+	command_line[0].demog_trs = 0;
+	command_line[0].demog_coage = 0;
+	command_line[0].demog_dayl = 0;
+	command_line[0].demog_disperse = 0;
+	command_line[0].demog_disperse_cell = 0.0;
+	command_line[0].demog_l2fr_max = -1.0;
+	command_line[0].demog_min_n = -1.0;
+	command_line[0].demog_nvcmax = -1.0;
+	command_line[0].demog_nmine_cost = -1.0;
+	command_line[0].demog_nforage_cost = -1.0;
+	command_line[0].demog_nforage_mask = 0;
+	command_line[0].demog_nfun_k[0] = -1.0;
+	command_line[0].demog_nfun_k[1] = command_line[0].demog_nfun_k[2] = command_line[0].demog_nfun_k[3] = 0.0;
+	command_line[0].demog_nfun_charge = 0;
+	command_line[0].demog_nfun_mask = 0;
+	command_line[0].demog_mdist_frac = -1.0;
+	command_line[0].demog_browse_rate = 0.0;
+	command_line[0].demog_browse_height = 0.0;
+	command_line[0].demog_browse_mask = 0;
+	command_line[0].demog_supp_gcrit = 0.0;
+	command_line[0].demog_supp_dbhmax = 0.0;
+	command_line[0].demog_supp_npft = 0;
+	command_line[0].demog_supp_minlayer = 1;
+	command_line[0].demog_mdist_n = 0;
+	command_line[0].demog_nmine_rate = 0.0;
+	command_line[0].demog_nmine_mask = 0;
 	command_line[0].demog_wood_resp = 0.0;
 	command_line[0].demog_litter_direct = 0;
 	command_line[0].vgsen_flag = 0;
@@ -410,10 +443,283 @@ printf("%s ",command_line[0].WUI_filename);
 				command_line[0].demog_litter_direct = 1;
 				i++;
 			}
+			else if ( strcmp(main_argv[i],"-demog_browse") == 0 ){
+				/* browse mortality of small saplings (FATES host patch): <rate 1/yr> <height m> <PFT list> */
+				char *tok;
+				if ((i + 3 >= main_argc) || (valid_option(main_argv[i+3])==1)) {
+					fprintf(stderr,"FATAL ERROR: -demog_browse needs <rate 1/yr> <height m> <pft list>\n");
+					exit(EXIT_FAILURE);
+				}
+				command_line[0].demog_browse_rate = strtod(main_argv[i+1], NULL);
+				command_line[0].demog_browse_height = strtod(main_argv[i+2], NULL);
+				command_line[0].demog_browse_mask = 0;
+				for (tok = strtok(main_argv[i+3], ","); tok != NULL; tok = strtok(NULL, ",")) {
+					int k = atoi(tok);
+					if ((k < 1) || (k > 30)) {
+						fprintf(stderr,"FATAL ERROR: -demog_browse PFT %s out of range 1-30\n", tok);
+						exit(EXIT_FAILURE);
+					}
+					command_line[0].demog_browse_mask |= (1 << (k - 1));
+				}
+				i += 4;
+			}
+			else if ( strcmp(main_argv[i],"-demog_suppress") == 0 ){
+				/* growth-dependent (suppression) mortality (FATES host patch):
+				   <critical dbh growth cm/yr> <max dbh cm> <rate 1/yr at zero growth,
+				   comma list by PFT (0 = off)> [min canopy layer, 1 = all (default), 2 = understory only] */
+				char *tok;
+				if ((i + 3 >= main_argc) || (valid_option(main_argv[i+3])==1)) {
+					fprintf(stderr,"FATAL ERROR: -demog_suppress needs <gcrit cm/yr> <max dbh cm> <rate list by PFT>\n");
+					exit(EXIT_FAILURE);
+				}
+				command_line[0].demog_supp_gcrit = strtod(main_argv[i+1], NULL);
+				command_line[0].demog_supp_dbhmax = strtod(main_argv[i+2], NULL);
+				command_line[0].demog_supp_npft = 0;
+				for (tok = strtok(main_argv[i+3], ","); tok != NULL; tok = strtok(NULL, ",")) {
+					if (command_line[0].demog_supp_npft >= 30) {
+						fprintf(stderr,"FATAL ERROR: -demog_suppress: more than 30 rates\n");
+						exit(EXIT_FAILURE);
+					}
+					command_line[0].demog_supp_rate[command_line[0].demog_supp_npft++] = strtod(tok, NULL);
+				}
+				i += 4;
+				if ((i < main_argc) && (valid_option(main_argv[i]) != 1)) {
+					command_line[0].demog_supp_minlayer = (int)strtol(main_argv[i], NULL, 10);
+					i += 1;
+				}
+			}
+			else if ( strcmp(main_argv[i],"-demog_mort_disturb") == 0 ){
+				/* per-patch fates_mort_disturb_frac (FATES host patch): <frac 0-1> <patch ID list>,
+				   e.g. 0 88,91,95,96 = canopy deaths in those patches thin the cohort in place
+				   instead of opening a new disturbed (gap) patch */
+				char *tok;
+				if ((i + 2 >= main_argc) || (valid_option(main_argv[i+2])==1)) {
+					fprintf(stderr,"FATAL ERROR: -demog_mort_disturb needs <frac> <patch ID list>\n");
+					exit(EXIT_FAILURE);
+				}
+				command_line[0].demog_mdist_frac = strtod(main_argv[i+1], NULL);
+				if ((command_line[0].demog_mdist_frac < 0.0) || (command_line[0].demog_mdist_frac > 1.0)) {
+					fprintf(stderr,"FATAL ERROR: -demog_mort_disturb frac must be in 0-1\n");
+					exit(EXIT_FAILURE);
+				}
+				/* repeatable: each use appends its patches with its own fraction (2026-11-03) */
+				for (tok = strtok(main_argv[i+2], ","); tok != NULL; tok = strtok(NULL, ",")) {
+					if (command_line[0].demog_mdist_n >= 256) {
+						fprintf(stderr,"FATAL ERROR: -demog_mort_disturb: at most 256 patches\n");
+						exit(EXIT_FAILURE);
+					}
+					command_line[0].demog_mdist_pfrac[command_line[0].demog_mdist_n] = command_line[0].demog_mdist_frac;
+					command_line[0].demog_mdist_pid[command_line[0].demog_mdist_n++] = atoi(tok);
+				}
+				i += 3;
+			}
+			else if ( strcmp(main_argv[i],"-demog_nfun") == 0 ){
+				/* FUN-style N acquisition cost (host): <kN_AM> <kC_AM> <kN_ECM> <kC_ECM> <charge 0|1>
+				   <ECM PFT list>: cost = kN / root-zone mineral N (gN/m2) + kC / fine-root C per crown
+				   area (gC/m2); each cohort's share of the plant mineral-N uptake is weighted by
+				   1 / cost (total plant uptake unchanged); charge 1 = N x cost taken from today's NPP */
+				char *tok;
+				int k;
+				if (i + 6 >= main_argc) {
+					fprintf(stderr,"FATAL ERROR: -demog_nfun needs <kN_AM> <kC_AM> <kN_ECM> <kC_ECM> <charge 0|1> <ECM pft list>\n");
+					exit(EXIT_FAILURE);
+				}
+				for (k = 0; k < 4; k++)
+					command_line[0].demog_nfun_k[k] = strtod(main_argv[i+1+k], NULL);
+				command_line[0].demog_nfun_charge = atoi(main_argv[i+5]);
+				command_line[0].demog_nfun_mask = 0;
+				for (tok = strtok(main_argv[i+6], ","); tok != NULL; tok = strtok(NULL, ",")) {
+					k = atoi(tok);
+					if ((k < 1) || (k > 30)) {
+						fprintf(stderr,"FATAL ERROR: -demog_nfun PFT %s out of range 1-30\n", tok);
+						exit(EXIT_FAILURE);
+					}
+					command_line[0].demog_nfun_mask |= (1 << (k - 1));
+				}
+				for (k = 0; k < 4; k++)
+					if (command_line[0].demog_nfun_k[k] <= 0.0) {
+						fprintf(stderr,"FATAL ERROR: -demog_nfun needs all four k > 0\n");
+						exit(EXIT_FAILURE);
+					}
+				i += 7;
+			}
+			else if ( strcmp(main_argv[i],"-demog_nforage") == 0 ){
+				/* AM foraging (host): <cost gC/gN> <PFT list>: excess C / cost is added to the
+				   plant claim on mineral N; the extra uptake goes to the foraging cohorts */
+				char *tok;
+				if ((i + 2 >= main_argc) || (valid_option(main_argv[i+1])==1) || (valid_option(main_argv[i+2])==1)){
+					fprintf(stderr,"FATAL ERROR: -demog_nforage needs <cost gC/gN> <pft list>\n");
+					exit(EXIT_FAILURE);
+				}
+				command_line[0].demog_nforage_cost = strtod(main_argv[i+1], NULL);
+				command_line[0].demog_nforage_mask = 0;
+				for (tok = strtok(main_argv[i+2], ","); tok != NULL; tok = strtok(NULL, ",")) {
+					int k = atoi(tok);
+					if ((k < 1) || (k > 30)) {
+						fprintf(stderr,"FATAL ERROR: -demog_nforage PFT %s out of range 1-30\n", tok);
+						exit(EXIT_FAILURE);
+					}
+					command_line[0].demog_nforage_mask |= (1 << (k - 1));
+				}
+				if (command_line[0].demog_nforage_cost <= 0.0) {
+					fprintf(stderr,"FATAL ERROR: -demog_nforage needs cost > 0\n");
+					exit(EXIT_FAILURE);
+				}
+				i += 3;
+			}
+			else if ( strcmp(main_argv[i],"-demog_nmine") == 0 ){
+				/* C-paid N acquisition from soil organic N (host): <cost gC/gN> <max share of
+				   soil organic N per yr> <PFT list, e.g. 1,2,3> */
+				char *tok;
+				if ((i + 3 >= main_argc) || (valid_option(main_argv[i+1])==1) || (valid_option(main_argv[i+2])==1)
+				    || (valid_option(main_argv[i+3])==1)){
+					fprintf(stderr,"FATAL ERROR: -demog_nmine needs <cost gC/gN> <rate /yr> <pft list>\n");
+					exit(EXIT_FAILURE);
+				}
+				command_line[0].demog_nmine_cost = strtod(main_argv[i+1], NULL);
+				command_line[0].demog_nmine_rate = strtod(main_argv[i+2], NULL);
+				command_line[0].demog_nmine_mask = 0;
+				for (tok = strtok(main_argv[i+3], ","); tok != NULL; tok = strtok(NULL, ",")) {
+					int k = atoi(tok);
+					if ((k < 1) || (k > 30)) {
+						fprintf(stderr,"FATAL ERROR: -demog_nmine PFT %s out of range 1-30\n", tok);
+						exit(EXIT_FAILURE);
+					}
+					command_line[0].demog_nmine_mask |= (1 << (k - 1));
+				}
+				if ((command_line[0].demog_nmine_cost <= 0.0) || (command_line[0].demog_nmine_rate < 0.0)) {
+					fprintf(stderr,"FATAL ERROR: -demog_nmine needs cost > 0 and rate >= 0\n");
+					exit(EXIT_FAILURE);
+				}
+				i += 4;
+			}
+			else if ( strcmp(main_argv[i],"-demog_nvcmax") == 0 ){
+				/* photosynthetic capacity follows leaf N status, floor = arg (host patch) */
+				i++;
+				if ((i == main_argc) || (valid_option(main_argv[i])==1)){
+					fprintf(stderr,"FATAL ERROR: value not specified after -demog_nvcmax\n");
+					exit(EXIT_FAILURE);
+				}
+				command_line[0].demog_nvcmax = strtod(main_argv[i], NULL);
+				i++;
+			}
+			else if ( strcmp(main_argv[i],"-demog_min_n") == 0 ){
+				/* terminate FATES cohorts thinner than this (stems/ha; host patch) */
+				i++;
+				if ((i == main_argc) || (valid_option(main_argv[i])==1)){
+					fprintf(stderr,"FATAL ERROR: value not specified after -demog_min_n\n");
+					exit(EXIT_FAILURE);
+				}
+				command_line[0].demog_min_n = strtod(main_argv[i], NULL);
+				i++;
+			}
+			else if ( strcmp(main_argv[i],"-demog_l2fr_max") == 0 ){
+				/* cap on FATES's dynamic leaf-to-fineroot ratio (host patch) */
+				i++;
+				if ((i == main_argc) || (valid_option(main_argv[i])==1)){
+					fprintf(stderr,"FATAL ERROR: value not specified after -demog_l2fr_max\n");
+					exit(EXIT_FAILURE);
+				}
+				command_line[0].demog_l2fr_max = strtod(main_argv[i], NULL);
+				i++;
+			}
+			else if ( strcmp(main_argv[i],"-demog_disperse") == 0 ){
+				/* FATES seed dispersal between neighbouring sites (patch centroids from the flow
+				   table); argument: metres per flow-table coordinate unit (the DEM cell size) */
+				i++;
+				if ((i == main_argc) || (valid_option(main_argv[i])==1)){
+					fprintf(stderr,"FATAL ERROR: cell size (m) not specified after -demog_disperse\n");
+					exit(EXIT_FAILURE);
+				}
+				command_line[0].demog_disperse = 1;
+				command_line[0].demog_disperse_cell = strtod(main_argv[i], NULL);
+				if (command_line[0].demog_disperse_cell <= 0.0) {
+					fprintf(stderr,"FATAL ERROR: -demog_disperse cell size must be > 0\n");
+					exit(EXIT_FAILURE);
+				}
+				i++;
+			}
+			else if ( strcmp(main_argv[i],"-demog_dayl") == 0 ){
+				/* FATES day-length scaling of photosynthetic capacity (CLM: (dayl / dayl_max)^2) */
+				command_line[0].demog_dayl = 1;
+				i++;
+			}
+			else if ( strcmp(main_argv[i],"-demog_coage") == 0 ){
+				/* FATES cohort age tracking (needed for fates_mort_*_age_senescence; FATES does not
+				   allow it with inventory initialisation, so use the seedling cold start) */
+				command_line[0].demog_coage = 1;
+				i++;
+			}
+			else if ( strcmp(main_argv[i],"-demog_trs") == 0 ){
+				/* FATES Tree Recruitment Scheme (TRS) with seedling dynamics: light- and moisture-
+				   dependent germination, seedling mortality and seedling-to-sapling recruitment */
+				command_line[0].demog_trs = 1;
+				i++;
+			}
+			else if ( strcmp(main_argv[i],"-demog_diurnal") == 0 ){
+				/* FATES daylight split into <n> flux sub-steps with diurnal light,
+				   temperature and VPD (photosynthesis / conductance only; daily
+				   demography unchanged); 1 = one daylight-mean step (default) */
+				if ((i + 1 >= main_argc) || (valid_option(main_argv[i+1]) == 1)) {
+					fprintf(stderr,"FATAL ERROR: -demog_diurnal needs the number of daylight sub-steps\n");
+					exit(EXIT_FAILURE);
+				}
+				command_line[0].demog_diurnal = (int) strtol(main_argv[i+1], NULL, 10);
+				if ((command_line[0].demog_diurnal < 1) || (command_line[0].demog_diurnal > 12)) {
+					fprintf(stderr,"FATAL ERROR: -demog_diurnal: 1-12 sub-steps\n");
+					exit(EXIT_FAILURE);
+				}
+				i += 2;
+			}
+			else if ( strcmp(main_argv[i],"-soilE_litter") == 0 ){
+				/* soil evaporation: wetness-dependent surface conductance and
+				   litter resistance in series (surface_daily_F) */
+				command_line[0].soilE_litter = 1;
+				i++;
+			}
+			else if ( strcmp(main_argv[i],"-demog_wetcanopy") == 0 ){
+				/* FATES transpiration excludes the daylight spent drying the wet canopy
+				   (legacy canopy_stratum_daily_F rule), not only the rain time */
+				command_line[0].demog_wetcanopy = 1;
+				i++;
+			}
+			else if ( strcmp(main_argv[i],"-demog_medlyn") == 0 ){
+				/* FATES Medlyn stomatal conductance (fates_leaf_stomatal_slope_medlyn) instead of Ball-Berry */
+				command_line[0].demog_medlyn = 1;
+				i++;
+			}
+			else if ( strcmp(main_argv[i],"-demog_ncap") == 0 ){
+				/* FATES plant N claim capped at [mult x] (growth N need + N store refill) */
+				command_line[0].demog_ncap = 1;
+				i++;
+				if ((i < main_argc) && (valid_option(main_argv[i]) != 1)) {
+					command_line[0].demog_ncap_mult = strtod(main_argv[i], NULL);
+					if (command_line[0].demog_ncap_mult <= 0.0) {
+						fprintf(stderr,"FATAL ERROR: -demog_ncap multiplier must be > 0\n");
+						exit(EXIT_FAILURE);
+					}
+					i++;
+				}
+			}
 			else if ( strcmp(main_argv[i],"-demog_nstore_reg") == 0 ){
 				/* FATES plant N claim scaled by each cohort's room in its N store */
 				command_line[0].demog_nstore_reg = 1;
 				i++;
+			}
+			else if ( strcmp(main_argv[i],"-demog_nsplit") == 0 ){
+				/* granted FATES plant N shared among cohorts by max(RD capacity, growth N need);
+				   the plant claim on soil N (RD capacity) and the plant-microbe competition unchanged */
+				command_line[0].demog_nsplit = 1;
+				i++;
+				/* optional rule: 1 = max(capacity, need) (default), 2 = min(capacity, need) */
+				if ((i < main_argc) && (valid_option(main_argv[i]) != 1)) {
+					command_line[0].demog_nsplit = atoi(main_argv[i]);
+					if ((command_line[0].demog_nsplit < 1) || (command_line[0].demog_nsplit > 2)) {
+						fprintf(stderr,"FATAL ERROR: -demog_nsplit rule must be 1 (max) or 2 (min)\n");
+						exit(EXIT_FAILURE);
+					}
+					i++;
+				}
 			}
 			else if ( strcmp(main_argv[i],"-demog_nneed") == 0 ){
 				/* FATES plant N demand from potential growth, not only root capacity */

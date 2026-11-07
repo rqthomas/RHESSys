@@ -118,7 +118,8 @@ int allocate_annual_growth(				int id,
 	/*	carbon in excess of that required for max LAI */
 	/*	is re-allocated to stemwood; for grasses it is allocated to roots */
 	/*--------------------------------------------------------------*/
-   	excess_lai = (cs->leafc + cs->leafc_store + cs->leafc_transfer) * epc.proj_sla - epc.max_lai;
+   	/* fstor2tran < 1: only the share of leafc_store that moves to transfer this year counts toward next year's LAI */
+   	excess_lai = (cs->leafc + cs->leafc_store * epc.fstor2tran + cs->leafc_transfer) * epc.proj_sla - epc.max_lai;
  	if ( excess_lai > ZERO) {
  
                 excess_carbon = excess_lai / epc.proj_sla;
@@ -330,63 +331,66 @@ int allocate_annual_growth(				int id,
 	/*  we include a delay on storage output so that the
 		veg does not die in a bad year -esp. for Grasses	*/
 	/*--------------------------------------------------------------*/
+	/* epc.fstor2tran (CLM fstor2tran; default 1 = original): only this fraction of the transferable
+	   store moves to the transfer pools; the rest stays in the store pools and accumulates with
+	   later years' storage allocation, so each spring's flush averages over several years */
 	cdf->storage_transfer_prop = storage_transfer_prop;
-	cdf->leafc_store_to_leafc_transfer = cs->leafc_store * storage_transfer_prop;
+	cdf->leafc_store_to_leafc_transfer = cs->leafc_store * storage_transfer_prop * epc.fstor2tran;
 	cs->cpool += cs->leafc_store * (1.0-storage_transfer_prop);
-	cs->leafc_store = 0.0;
+	cs->leafc_store = (epc.fstor2tran < 1.0) ? cs->leafc_store * storage_transfer_prop * (1.0 - epc.fstor2tran) : 0.0;
 
-	cdf->frootc_store_to_frootc_transfer=cs->frootc_store* storage_transfer_prop;
+	cdf->frootc_store_to_frootc_transfer=cs->frootc_store* storage_transfer_prop * epc.fstor2tran;
 	cs->cpool += cs->frootc_store * (1.0-storage_transfer_prop);
-	cs->frootc_store = 0.0;
-	cdf->gresp_store_to_gresp_transfer = cs->gresp_store * storage_transfer_prop;
+	cs->frootc_store = (epc.fstor2tran < 1.0) ? cs->frootc_store * storage_transfer_prop * (1.0 - epc.fstor2tran) : 0.0;
+	cdf->gresp_store_to_gresp_transfer = cs->gresp_store * storage_transfer_prop * epc.fstor2tran;
 	cs->cpool += cs->gresp_store * (1.0-storage_transfer_prop);
-	cs->gresp_store = 0.0;
+	cs->gresp_store = (epc.fstor2tran < 1.0) ? cs->gresp_store * storage_transfer_prop * (1.0 - epc.fstor2tran) : 0.0;
 	if (epc.veg_type == TREE){
 		cdf->livestemc_store_to_livestemc_transfer = cs->livestemc_store
-			* storage_transfer_prop;
+			* storage_transfer_prop * epc.fstor2tran;
 		cs->cpool += cs->livestemc_store * (1.0-storage_transfer_prop);
-		cs->livestemc_store = 0.0;
+		cs->livestemc_store = (epc.fstor2tran < 1.0) ? cs->livestemc_store * storage_transfer_prop * (1.0 - epc.fstor2tran) : 0.0;
 		cdf->deadstemc_store_to_deadstemc_transfer = cs->deadstemc_store
-			* storage_transfer_prop;
+			* storage_transfer_prop * epc.fstor2tran;
 		cs->cpool += cs->deadstemc_store * (1.0-storage_transfer_prop);
-		cs->deadstemc_store = 0.0;
+		cs->deadstemc_store = (epc.fstor2tran < 1.0) ? cs->deadstemc_store * storage_transfer_prop * (1.0 - epc.fstor2tran) : 0.0;
 		cdf->livecrootc_store_to_livecrootc_transfer = cs->livecrootc_store
-			* storage_transfer_prop;
+			* storage_transfer_prop * epc.fstor2tran;
 		cs->cpool += cs->livecrootc_store * (1.0-storage_transfer_prop);
-		cs->livecrootc_store = 0.0;
+		cs->livecrootc_store = (epc.fstor2tran < 1.0) ? cs->livecrootc_store * storage_transfer_prop * (1.0 - epc.fstor2tran) : 0.0;
 		cdf->deadcrootc_store_to_deadcrootc_transfer = cs->deadcrootc_store
-			* storage_transfer_prop;
+			* storage_transfer_prop * epc.fstor2tran;
 		cs->cpool += cs->deadcrootc_store * (1.0-storage_transfer_prop);
-		cs->deadcrootc_store = 0.0;
+		cs->deadcrootc_store = (epc.fstor2tran < 1.0) ? cs->deadcrootc_store * storage_transfer_prop * (1.0 - epc.fstor2tran) : 0.0;
 	}
 
 	/* nitrogen transfers */
 	/* for grasses, we include a delay on storage output so that the
 	grasses do not die in a bad year				*/
 
-	ndf->leafn_store_to_leafn_transfer = ns->leafn_store * storage_transfer_prop;
+	ndf->leafn_store_to_leafn_transfer = ns->leafn_store * storage_transfer_prop * epc.fstor2tran;
 	ns->npool += ns->leafn_store * (1.0-storage_transfer_prop);
-	ns->leafn_store = 0.0;
-	ndf->frootn_store_to_frootn_transfer=ns->frootn_store* storage_transfer_prop;
+	ns->leafn_store = (epc.fstor2tran < 1.0) ? ns->leafn_store * storage_transfer_prop * (1.0 - epc.fstor2tran) : 0.0;
+	ndf->frootn_store_to_frootn_transfer=ns->frootn_store* storage_transfer_prop * epc.fstor2tran;
 	ns->npool += ns->frootn_store * (1.0-storage_transfer_prop);
-	ns->frootn_store = 0.0;
+	ns->frootn_store = (epc.fstor2tran < 1.0) ? ns->frootn_store * storage_transfer_prop * (1.0 - epc.fstor2tran) : 0.0;
 	if (epc.veg_type == TREE){
 		ndf->livestemn_store_to_livestemn_transfer = ns->livestemn_store
-			* storage_transfer_prop;
+			* storage_transfer_prop * epc.fstor2tran;
 		ns->npool += ns->livestemn_store * (1.0-storage_transfer_prop);
-		ns->livestemn_store = 0.0;
+		ns->livestemn_store = (epc.fstor2tran < 1.0) ? ns->livestemn_store * storage_transfer_prop * (1.0 - epc.fstor2tran) : 0.0;
 		ndf->deadstemn_store_to_deadstemn_transfer = ns->deadstemn_store
-			* storage_transfer_prop;
+			* storage_transfer_prop * epc.fstor2tran;
 		ns->npool += ns->deadstemn_store * (1.0-storage_transfer_prop);
-		ns->deadstemn_store = 0.0;
+		ns->deadstemn_store = (epc.fstor2tran < 1.0) ? ns->deadstemn_store * storage_transfer_prop * (1.0 - epc.fstor2tran) : 0.0;
 		ndf->livecrootn_store_to_livecrootn_transfer = ns->livecrootn_store
-			* storage_transfer_prop;
+			* storage_transfer_prop * epc.fstor2tran;
 		ns->npool += ns->livecrootn_store * (1.0-storage_transfer_prop);
-		ns->livecrootn_store = 0.0;
+		ns->livecrootn_store = (epc.fstor2tran < 1.0) ? ns->livecrootn_store * storage_transfer_prop * (1.0 - epc.fstor2tran) : 0.0;
 		ndf->deadcrootn_store_to_deadcrootn_transfer = ns->deadcrootn_store
-			* storage_transfer_prop;
+			* storage_transfer_prop * epc.fstor2tran;
 		ns->npool += ns->deadcrootn_store * (1.0-storage_transfer_prop);
-		ns->deadcrootn_store = 0.0;
+		ns->deadcrootn_store = (epc.fstor2tran < 1.0) ? ns->deadcrootn_store * storage_transfer_prop * (1.0 - epc.fstor2tran) : 0.0;
 	}
 	
 	

@@ -110,6 +110,8 @@ struct routing_list_object *construct_routing_topology(
       exit(EXIT_FAILURE);
     }
 		rlist->list[i] = patch;
+		patch[0].flow_x = x;		/* flow-table centroid, grid cells (-demog_disperse) */
+		patch[0].flow_y = y;
 
 		if ((patch[0].soil_defaults[0][0].Ksat_0 < ZERO))	
 			printf("\n WARNING lateral Ksat (%lf) are close to zero for patch %d",

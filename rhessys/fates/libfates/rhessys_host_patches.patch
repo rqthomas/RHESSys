@@ -1,6 +1,6 @@
 --- a/biogeochem/EDCanopyStructureMod.F90
 +++ b/biogeochem/EDCanopyStructureMod.F90
-@@ -422,10 +422,24 @@ contains
+@@ -422,9 +422,23 @@
      integer  :: ilyr_change     ! layer offset from current for the destination (+/- 1)
      integer  :: ic,ic_n,ic_nn   ! Cohort indices
      integer  :: n_layer         ! The number of cohorts in the layer
@@ -8,7 +8,7 @@
  
  
      if (target_area<nearzero) return
- 
++
 +    ! RHESSys host: co_scr is allocated with max_cohort_per_patch, but a patch can hold
 +    ! more cohorts than that between fusions (recruits, layer splits); grow it if needed
 +    n_co_patch = 0
@@ -21,13 +21,44 @@
 +       deallocate(patch%co_scr)
 +       allocate(patch%co_scr(2*n_co_patch))
 +    end if
-+
+ 
      ! Use the patch's scratch vector of cohorts
      ! to help track which cohorts are in the target layer
-     associate(layer_co => patch%co_scr)
+--- a/biogeochem/EDCohortDynamicsMod.F90
++++ b/biogeochem/EDCohortDynamicsMod.F90
+@@ -105,6 +105,12 @@
+   
+   logical, parameter :: debug  = .false. ! local debug flag
+   
++  ! RHESSys host patch (rhessys_host_min_npm2, 2026-10-27): extra termination density (plants per m2 of
++  ! patch). Cohorts thinned to a few hundredths of a stem per ha but above min_npm2 keep growing in the
++  ! open canopy layer to impossible sizes (dbh 200-1100 cm) and break the CNP growth integrator. Set by
++  ! the host (-demog_min_n, stems/ha); <= 0 = stock FATES. Terminated like min_npm2 (mass to litter).
++  real(r8), public :: host_min_npm2 = -1.0_r8
++
+   character(len=*), parameter, private :: sourcefile = &
+        __FILE__
+ 
+@@ -350,6 +356,7 @@
+ 
+          ! Not enough n or dbh
+          if  (currentCohort%n/currentPatch%area <= min_npm2 .or.	&  !
++              currentCohort%n/currentPatch%area <= host_min_npm2 .or. &   ! RHESSys host patch
+               currentCohort%n <= min_nppatch .or. &
+               (currentCohort%dbh < 0.00001_r8 .and. store_c < 0._r8) ) then
+             terminate = itrue
+@@ -1092,6 +1099,8 @@
+                                       ! biomass and dbh tendencies
+                                       currentCohort%ddbhdt     = (currentCohort%n*currentCohort%ddbhdt  + &
+                                            nextc%n*nextc%ddbhdt)/newn
++                                      currentCohort%ddbh_rm    = (currentCohort%n*currentCohort%ddbh_rm  + &
++                                           nextc%n*nextc%ddbh_rm)/newn
+ 
+                                       do i=1, nlevleaf
+                                          if (currentCohort%year_net_uptake(i) == 999._r8 .or. nextc%year_net_uptake(i) == 999._r8) then
 --- a/biogeochem/EDLoggingMortalityMod.F90
 +++ b/biogeochem/EDLoggingMortalityMod.F90
-@@ -83,7 +83,62 @@ module EDLoggingMortalityMod
+@@ -83,7 +83,62 @@
     implicit none
     private
  
@@ -90,7 +121,7 @@
                                          ! performed during the current time-step
  
     logical, parameter :: debug = .false.
-@@ -102,6 +157,8 @@ module EDLoggingMortalityMod
+@@ -102,6 +157,8 @@
           __FILE__
     
     public :: LoggingMortality_frac
@@ -99,7 +130,7 @@
     public :: logging_litter_fluxes
     public :: logging_time
     public :: IsItLoggingTime
-@@ -113,6 +170,28 @@ module EDLoggingMortalityMod
+@@ -113,6 +170,28 @@
  
  contains
  
@@ -128,7 +159,7 @@
     subroutine IsItLoggingTime(is_master,currentSite)
  
        ! -------------------------------------------------------------------------------
-@@ -137,6 +216,12 @@ contains
+@@ -137,6 +216,12 @@
        ! this is true for either hlm harvest or fates logging
        if(hlm_use_logging.eq.ifalse) return
  
@@ -141,7 +172,7 @@
        ! all of these are valid for hlm harvest
        ! so adjust annual harvest inputs accordingly in LoggingMortality_frac
        ! note that the specific event will allow only one hlm harvest, regardless of input
-@@ -925,7 +1010,7 @@ contains
+@@ -925,7 +1010,7 @@
  
                 if(prt_params%woody(pft) == itrue) then
                    direct_dead   = 0.0_r8
@@ -150,7 +181,7 @@
                         (1._r8-currentPatch%fract_ldist_not_harvested) * currentCohort%n * &
                         (patch_site_areadis/currentPatch%area)   !kgC/site/day
                 else
-@@ -962,6 +1047,17 @@ contains
+@@ -962,6 +1047,17 @@
  	
  	    !adjust how wood is partitioned between the cwd classes based on cohort dbh
              call adjust_SF_CWD_frac(currentCohort%dbh,ncwd,SF_val_CWD_frac,SF_val_CWD_frac_adj) 
@@ -168,7 +199,7 @@
              
  	    do c = 1,ncwd-1
                 
-@@ -1069,17 +1165,17 @@ contains
+@@ -1069,17 +1165,17 @@
                    SF_val_CWD_frac_adj(ncwd)
  
              trunk_product_site = trunk_product_site + &
@@ -192,7 +223,7 @@
              ! Handle fluxes of leaf, root and storage carbon into litter pools. 
 --- a/biogeochem/EDMortalityFunctionsMod.F90
 +++ b/biogeochem/EDMortalityFunctionsMod.F90
-@@ -29,6 +29,7 @@ module EDMortalityFunctionsMod
+@@ -29,6 +29,7 @@
     use FatesInterfaceTypesMod     , only : hlm_use_planthydro
     use FatesInterfaceTypesMod     , only : hlm_use_tree_damage
     use EDLoggingMortalityMod , only : LoggingMortality_frac
@@ -200,7 +231,63 @@
     use EDParamsMod           , only : mortality_disturbance_fraction
     use FatesConstantsMod     , only : n_landuse_cats
     use PRTGenericMod,          only : carbon12_element
-@@ -349,6 +350,10 @@ contains
+@@ -45,6 +46,25 @@
+         __FILE__
+    
+    public :: mortality_rates
++
++   ! RHESSys host patch (rhessys_host_browse, 2026-10-30): browse mortality of small saplings. Tree cohorts
++   ! shorter than host_browse_height (m) whose PFT bit is set in host_browse_mask get host_browse_rate (1/yr)
++   ! added to their background mortality. host_browse_rate <= 0 = off (stock FATES).
++   real(r8), public :: host_browse_rate = 0.0_r8
++   real(r8), public :: host_browse_height = 0.0_r8
++   integer,  public :: host_browse_mask = 0
++   ! RHESSys host patch (rhessys_host_suppress, 2026-11-01): growth-dependent (suppression) mortality, as in gap
++   ! models (e.g. SORTIE; Kobe 1995; Wyckoff & Clark 2002 for southern Appalachian trees). A cohort whose ~1-yr mean
++   ! dbh growth (cohort%ddbh_rm, cm/yr) is below host_supp_gcrit and whose dbh is below host_supp_dbhmax (cm)
++   ! gets host_supp_rate(pft) x (1 - ddbh_rm/host_supp_gcrit) added to its background mortality.
++   ! host_supp_gcrit <= 0 = off. (A size limit: on open stands FATES puts saplings in canopy layer 1, and slow
++   ! growth of large canopy trees reflects N supply, not low vigour.) host_supp_minlayer (default 1 = all layers)
++   ! restricts it to cohorts in that canopy layer or below (2 = understory only).
++   integer,  parameter      :: host_supp_maxpft = 30
++   real(r8), public :: host_supp_rate(host_supp_maxpft) = 0.0_r8
++   real(r8), public :: host_supp_gcrit = 0.0_r8
++   real(r8), public :: host_supp_dbhmax = 0.0_r8
++   integer,  public :: host_supp_minlayer = 1      ! applies to cohorts in this canopy layer or below (1 = all)
+    public :: Mortality_Derivative
+    public :: ExemptTreefallDist
+    
+@@ -271,6 +291,21 @@
+        frmort = 0._r8
+     endif
+ 
++    ! RHESSys host patch: browse mortality of small saplings
++    if (host_browse_rate > 0.0_r8) then
++       if (cohort_in%height < host_browse_height .and. btest(host_browse_mask, cohort_in%pft - 1)) &
++            bmort = bmort + host_browse_rate
++    end if
++
++    ! RHESSys host patch: growth-dependent (suppression) mortality
++    if (host_supp_gcrit > 0.0_r8 .and. cohort_in%pft <= host_supp_maxpft) then
++       if (host_supp_rate(cohort_in%pft) > 0.0_r8 .and. cohort_in%dbh < host_supp_dbhmax .and. &
++            cohort_in%canopy_layer >= host_supp_minlayer .and. &
++            cohort_in%ddbh_rm < host_supp_gcrit) &
++            bmort = bmort + host_supp_rate(cohort_in%pft) * &
++            (1.0_r8 - max(0.0_r8, cohort_in%ddbh_rm) / host_supp_gcrit)
++    end if
++
+     if (test_zero_mortality) then
+        cmort = 0.0_r8
+        hmort = 0.0_r8
+@@ -326,6 +361,7 @@
+     real(r8) :: asmort   ! age dependent senescence mortality rate (fraction per year)
+     real(r8) :: dgmort   ! damage mortality (fraction per year)
+     real(r8) :: dndt_logging      ! Mortality rate (per day) associated with the a logging event
++    real(r8) :: mdf               ! RHESSys host patch: this site's fates_mort_disturb_frac
+     integer  :: ipft              ! local copy of the pft index
+     
+    !----------------------------------------------------------------------
+@@ -349,6 +385,10 @@
                                 land_use_label, &
                                 age_since_anthro_disturbance, &
                                 current_fates_landuse_state_vector, harvestable_forest_c, harvest_tag)
@@ -211,9 +298,20 @@
  
      if (currentCohort%canopy_layer > 1)then 
         ! Include understory logging mortality rates not associated with disturbance
+@@ -370,7 +410,9 @@
+ 
+        currentCohort%dndt= -(cmort+hmort+bmort+frmort+smort+asmort+dgmort) * currentCohort%n
+        if ( .not. ExemptTreefallDist(currentCohort)) then
+-          currentCohort%dndt = (1.0_r8-mortality_disturbance_fraction) * currentCohort%dndt
++          mdf = mortality_disturbance_fraction                                         ! RHESSys host patch
++          if (currentSite%host_mort_disturb_frac >= 0.0_r8) mdf = currentSite%host_mort_disturb_frac
++          currentCohort%dndt = (1.0_r8-mdf) * currentCohort%dndt
+        endif
+ 
+     endif
 --- a/biogeochem/EDPatchDynamicsMod.F90
 +++ b/biogeochem/EDPatchDynamicsMod.F90
-@@ -70,6 +70,8 @@ module EDPatchDynamicsMod
+@@ -70,6 +70,8 @@
    use EDLoggingMortalityMod, only : get_harvest_rate_carbon
    use EDLoggingMortalityMod, only : get_harvestable_carbon
    use EDLoggingMortalityMod, only : get_harvest_debt
@@ -222,7 +320,15 @@
    use FatesLandUseChangeMod, only : GetInitLanduseHarvestRate
    use EDParamsMod          , only : mortality_disturbance_fraction
    use FatesAllometryMod    , only : carea_allom
-@@ -279,6 +281,10 @@ contains
+@@ -183,6 +185,7 @@
+     type(bc_in_type) , intent(in) :: bc_in
+     !
+     ! !LOCAL VARIABLES:
++    real(r8) :: mdf   ! RHESSys host patch: this site's fates_mort_disturb_frac
+     type (fates_patch_type) , pointer :: currentPatch
+     type (fates_cohort_type), pointer :: currentCohort
+ 
+@@ -279,6 +282,10 @@
            currentCohort%lmort_collateral = lmort_collateral
            currentCohort%lmort_infra      = lmort_infra
            currentCohort%l_degrad         = l_degrad
@@ -233,7 +339,19 @@
  
            currentCohort => currentCohort%taller
         end do
-@@ -389,7 +395,8 @@ contains
+@@ -361,8 +368,10 @@
+ 
+              ! Treefall Disturbance Rate.  Only count this for trees, not grasses
+              if ( .not. ExemptTreefallDist(currentCohort) ) then
++                mdf = mortality_disturbance_fraction                                   ! RHESSys host patch
++                if (site_in%host_mort_disturb_frac >= 0.0_r8) mdf = site_in%host_mort_disturb_frac
+                 currentPatch%disturbance_rates(dtype_ifall) = currentPatch%disturbance_rates(dtype_ifall) + &
+-                     mortality_disturbance_fraction * &
++                     mdf * &
+                      min(1.0_r8,currentCohort%dmort)*hlm_freq_day*currentCohort%c_area/currentPatch%area
+              end if
+ 
+@@ -389,7 +398,8 @@
  
         ! for non-closed-canopy areas subject to logging, add an additional increment of area disturbed
         ! equivalent to the fraction logged to account for transfer of interstitial ground area to new secondary lands
@@ -243,7 +361,7 @@
              (currentPatch%area - currentPatch%total_canopy_area) .gt. fates_tiny ) then
            ! The canopy is NOT closed. 
  
-@@ -502,7 +509,7 @@ contains
+@@ -502,7 +512,7 @@
      !
      ! !USES:
  
@@ -252,7 +370,26 @@
      use EDCohortDynamicsMod  , only : terminate_cohorts
      use FatesConstantsMod    , only : rsnbl_math_prec
      use FatesLandUseChangeMod, only : GetLanduseChangeRules
-@@ -1234,18 +1241,18 @@ contains
+@@ -512,6 +522,7 @@
+     type (bc_in_type), intent(in)      :: bc_in
+     !
+     ! !LOCAL VARIABLES:
++    real(r8) :: mdf   ! RHESSys host patch: this site's fates_mort_disturb_frac
+     type (fates_patch_type) , pointer :: newPatch
+     type (fates_patch_type) , pointer :: currentPatch
+     type (fates_cohort_type), pointer :: currentCohort
+@@ -854,7 +865,9 @@
+                                      ! because this is the part of the original patch where no trees have actually fallen
+                                      ! The diagnostic cmort,bmort,hmort, and frmort  rates have already been saved
+ 
+-                                     currentCohort%n = currentCohort%n * (1.0_r8 - mortality_disturbance_fraction * &
++                                     mdf = mortality_disturbance_fraction                   ! RHESSys host patch
++                                     if (currentSite%host_mort_disturb_frac >= 0.0_r8) mdf = currentSite%host_mort_disturb_frac
++                                     currentCohort%n = currentCohort%n * (1.0_r8 - mdf * &
+                                           min(1.0_r8,currentCohort%dmort * hlm_freq_day))
+ 
+                                      nc%n = 0.0_r8      ! kill all of the trees who caused the disturbance.
+@@ -1234,18 +1247,18 @@
                                          currentSite%imort_rate(currentCohort%size_class, currentCohort%pft) = &
                                               currentSite%imort_rate(currentCohort%size_class, currentCohort%pft) + &
                                               nc%n * currentPatch%fract_ldist_not_harvested * &
@@ -274,7 +411,7 @@
                                               ( ( sapw_c + struct_c + store_c) * prt_params%allom_agb_frac(currentCohort%pft) + &
                                               leaf_c ) * days_per_sec * years_per_day * ha_per_m2
  
-@@ -1256,7 +1263,7 @@ contains
+@@ -1256,7 +1269,7 @@
                                          ! LOGGING SURVIVORSHIP OF UNDERSTORY PLANTS IS SET AS A NEW PARAMETER
                                          ! in the fatesparameter files
                                          nc%n = nc%n * (1.0_r8 - &
@@ -283,9 +420,29 @@
  
                                          ! Step 3: Reduce the number count of cohorts in the
                                          !         original/donor/non-disturbed patch to reflect the area change
+@@ -2432,6 +2445,7 @@
+     type(bc_in_type)    , intent(in)            :: bc_in
+     !
+     ! !LOCAL VARIABLES:
++    real(r8) :: mdf   ! RHESSys host patch: this site's fates_mort_disturb_frac
+     type(fates_cohort_type), pointer      :: currentCohort
+     type(litter_type), pointer         :: new_litt
+     type(litter_type), pointer         :: curr_litt
+@@ -2515,8 +2529,10 @@
+              ! Upper canopy trees. The total dead is based on their disturbance
+              ! generating mortality rate.
+              
++             mdf = mortality_disturbance_fraction                                     ! RHESSys host patch
++             if (currentSite%host_mort_disturb_frac >= 0.0_r8) mdf = currentSite%host_mort_disturb_frac
+              num_dead = currentCohort%n * min(1.0_r8,currentCohort%dmort * &
+-                   hlm_freq_day * mortality_disturbance_fraction)
++                   hlm_freq_day * mdf)
+              
+           elseif(prt_params%woody(pft) == itrue) then
+              
 --- a/biogeochem/EDPhysiologyMod.F90
 +++ b/biogeochem/EDPhysiologyMod.F90
-@@ -98,6 +98,10 @@ module EDPhysiologyMod
+@@ -98,6 +98,10 @@
    use EDParamsMod           , only : q10_mr
    use EDParamsMod           , only : q10_froz
    use EDParamsMod           , only : logging_export_frac
@@ -296,7 +453,7 @@
    use EDParamsMod           , only : sdlng_mort_par_timescale
    use FatesPlantHydraulicsMod  , only : AccumulateMortalityWaterStorage
    use FatesConstantsMod     , only : itrue,ifalse
-@@ -455,6 +459,7 @@ contains
+@@ -455,6 +459,7 @@
      ! !LOCAL VARIABLES:
  
      integer :: el                          ! Litter element loop index
@@ -304,7 +461,7 @@
      integer :: nlev_eff_decomp             ! Number of active layers over which
      ! fragmentation fluxes are transfered
      !------------------------------------------------------------------------------------
-@@ -481,6 +486,22 @@ contains
+@@ -481,6 +486,22 @@
           ! as litter fluxes from live trees
           call CWDInput(currentSite, currentPatch, litt,bc_in)
  
@@ -327,7 +484,7 @@
           ! Only calculate fragmentation flux over layers that are active
           ! (RGK-Mar2019) SHOULD WE MAX THIS AT 1? DONT HAVE TO
  
-@@ -1031,7 +1052,12 @@ contains
+@@ -1031,7 +1052,12 @@
      !
      ! accumulate the GDD using daily mean temperatures
      ! Don't accumulate GDD during the growing season (that wouldn't make sense)
@@ -341,7 +498,19 @@
         currentSite%grow_deg_days = currentSite%grow_deg_days + temp_in_C
      endif
  
-@@ -3031,16 +3057,16 @@ contains
+@@ -2139,7 +2165,10 @@
+        ! for each element loop since the site_seed_rain is resent and updated for each element loop iteration
+        do pft = 1,numpft
+           site_mass%seed_out = site_mass%seed_out + site_seed_rain(pft)*site_disp_frac(pft) ![kg/site/day]
+-          currentSite%seed_out(pft) = currentSite%seed_out(pft) + site_seed_rain(pft)*site_disp_frac(pft) ![kg/site/day]
++          ! RHESSys host patch: seed_out is in carbon units (seed_in is read as carbon and scaled by the
++          ! receiving patch's repro stoichiometry), so accumulate it for the carbon element only
++          if (element_id == carbon12_element) &
++             currentSite%seed_out(pft) = currentSite%seed_out(pft) + site_seed_rain(pft)*site_disp_frac(pft) ![kg/site/day]
+        end do
+ 
+     end do el_loop
+@@ -3031,16 +3060,16 @@
                    prt_params%allom_agb_frac(pft)
  
               site_mass%wood_product_harvest(pft) = site_mass%wood_product_harvest(pft) + &
@@ -361,7 +530,7 @@
  
               ! Add AG wood to litter from indirect anthro sources
  
-@@ -3052,6 +3078,18 @@ contains
+@@ -3052,6 +3081,18 @@
                    (struct_m + sapw_m) * SF_val_CWD_frac_adj(c) * (dead_n_natural+dead_n_ilogging) * &
                    currentPatch%area * prt_params%allom_agb_frac(pft)
  
@@ -380,10 +549,11 @@
            else
  
               litt%ag_cwd_in(c) = litt%ag_cwd_in(c) + (struct_m + sapw_m) * &
-@@ -3234,6 +3272,16 @@ contains
+@@ -3233,6 +3274,16 @@
+     ! before they are decomposed, for example. This section needs further scientific input.
  
      do dcmpy = 1,ndcmpy
- 
++
 +       if (host_litter_passthrough) then
 +          ! RHESSys host patch: all fine litter (pool + today's input) to the host today
 +          litt%leaf_fines_frag(dcmpy) = litt%leaf_fines(dcmpy) + litt%leaf_fines_in(dcmpy)
@@ -393,7 +563,144 @@
 +          end do
 +          cycle
 +       end if
-+
+ 
         litt%leaf_fines_frag(dcmpy) = litt%leaf_fines(dcmpy) * &
               years_per_day * SF_val_max_decomp(fuel_classes%dead_leaves()) * fragmentation_scaler(soil_layer_index)
+--- a/biogeochem/FatesCohortMod.F90
++++ b/biogeochem/FatesCohortMod.F90
+@@ -17,6 +17,7 @@
+   use PRTGenericMod,              only : leaf_organ, fnrt_organ, sapw_organ
+   use PRTGenericMod,              only : repro_organ, store_organ, struct_organ
+   use PRTGenericMod,              only : carbon12_element
++  use PRTGenericMod,              only : nitrogen_element       ! RHESSys host patch (nvcmax)
+   use PRTParametersMod,           only : prt_params
+   use FatesParameterDerivedMod,   only : param_derived
+   use FatesHydraulicsMemMod,      only : ed_cohort_hydr_type
+@@ -262,6 +263,8 @@
+     real(r8) :: dndt      ! time derivative of cohort size [n/year]
+     real(r8) :: dhdt      ! time derivative of height [m/year]
+     real(r8) :: ddbhdt    ! time derivative of dbh [cm/year]
++    real(r8) :: ddbh_rm   ! RHESSys host patch (rhessys_host_suppress): running mean of ddbhdt over ~1 yr
++                          ! (e-folding 1 yr, updated daily) [cm/year]; new cohorts start at 1 cm/yr
  
+     !---------------------------------------------------------------------------
+ 
+@@ -300,6 +303,15 @@
+ 
+   end type fates_cohort_type
+ 
++
++  ! RHESSys host patch (rhessys_host_nvcmax, 2026-10-28): photosynthetic capacity follows leaf N status.
++  ! When > 0, UpdateCohortBioPhysRates multiplies vcmax25top, jmax25top, tpu25top and kp25top by
++  ! f = max(host_nvcmax_floor, min(1, (leaf N / leaf C) / leaf N:C target)) (CNP mode only). Leaf N
++  ! falls below target when turnover replacement restores leaf C without enough N (CNPPrioritizedReplacement),
++  ! so N shortage lowers C gain, and a shaded, N-starved cohort can run its storage down to FATES's
++  ! C-starvation mortality. Set by the host (-demog_nvcmax); <= 0 = stock FATES.
++  real(r8), public :: host_nvcmax_floor = -1.0_r8
++
+   contains
+ 
+     !===========================================================================
+@@ -450,6 +462,7 @@
+       this%dndt                    = nan 
+       this%dhdt                    = nan 
+       this%ddbhdt                  = nan
++      this%ddbh_rm                 = nan
+    
+       ! FIRE
+       this%fraction_crown_burned   = nan 
+@@ -607,6 +620,7 @@
+       this%efleaf_coh   = elongf_leaf
+       this%effnrt_coh   = elongf_fnrt
+       this%efstem_coh   = elongf_stem
++      this%ddbh_rm      = 1.0_r8   ! RHESSys host patch: no growth history yet (not in the restart)
+ 
+       ! This routine may be called during restarts, and at this point in the call sequence
+       ! the actual cohort data is unknown, as this is really only used for allocation
+@@ -792,6 +806,7 @@
+       copyCohort%dndt                    = this%dndt
+       copyCohort%dhdt                    = this%dhdt
+       copyCohort%ddbhdt                  = this%ddbhdt
++      copyCohort%ddbh_rm                 = this%ddbh_rm
+ 
+       ! FIRE
+       copyCohort%fraction_crown_burned   = this%fraction_crown_burned
+@@ -948,6 +963,7 @@
+       real(r8) :: frac_leaf_aclass(max_nleafage)  ! fraction of leaves in each age-class
+       integer  :: iage                            ! loop index for leaf ages
+       integer  :: ipft                            ! plant functional type index
++      real(r8) :: leaf_c_nv, nc_target_nv, fn_nv  ! RHESSys host patch (nvcmax)
+ 
+       ! First, calculate the fraction of leaves in each age class
+       ! It is assumed that each class has the same proportion across leaf layers
+@@ -995,6 +1011,21 @@
+         this%tpu25top = param_derived%tpu25top(ipft, 1)
+         this%kp25top = param_derived%kp25top(ipft, 1)
+ 
++      end if
++
++      ! RHESSys host patch (rhessys_host_nvcmax): scale the rates by leaf N status
++      if (host_nvcmax_floor > 0.0_r8 .and. hlm_parteh_mode == carbon_nitrogen_phosphorus) then
++         leaf_c_nv = this%prt%GetState(leaf_organ, carbon12_element)
++         if (leaf_c_nv > nearzero) then
++            nc_target_nv = prt_params%nitr_stoich_p1(ipft, prt_params%organ_param_id(leaf_organ))
++            fn_nv = this%prt%GetState(leaf_organ, nitrogen_element) / leaf_c_nv / &
++                    max(nc_target_nv, nearzero)
++            fn_nv = max(host_nvcmax_floor, min(1.0_r8, fn_nv))
++            this%vcmax25top = this%vcmax25top * fn_nv
++            this%jmax25top  = this%jmax25top  * fn_nv
++            this%tpu25top   = this%tpu25top   * fn_nv
++            this%kp25top    = this%kp25top    * fn_nv
++         end if
+       end if
+ 
+     end subroutine UpdateCohortBioPhysRates
+--- a/main/EDMainMod.F90
++++ b/main/EDMainMod.F90
+@@ -700,6 +700,9 @@
+ 
+           currentCohort%dhdt      = (currentCohort%height-height_old)/hlm_freq_day
+           currentCohort%ddbhdt    = (currentCohort%dbh-dbh_old)/hlm_freq_day
++          ! RHESSys host patch (rhessys_host_suppress): ~1-yr running mean of the dbh growth rate
++          currentCohort%ddbh_rm   = currentCohort%ddbh_rm + &
++               (currentCohort%ddbhdt - currentCohort%ddbh_rm) * hlm_freq_day
+ 
+           ! Carbon assimilate has been spent at this point
+           ! and can now be safely zero'd
+--- a/main/EDTypesMod.F90
++++ b/main/EDTypesMod.F90
+@@ -321,6 +321,11 @@
+ 
+   type, public :: ed_site_type
+      
++     ! RHESSys host patch (rhessys_host_mort_disturb, 2026-10-30): per-site override of
++     ! fates_mort_disturb_frac (share of canopy mortality that creates a new disturbed patch);
++     ! < 0 = use the parameter. Set by the host each run (not in the restart file).
++     real(r8) :: host_mort_disturb_frac = -1.0_r8
++
+      ! POINTERS  
+      type (fates_patch_type), pointer :: oldest_patch => null()   ! pointer to oldest patch at the site  
+      type (fates_patch_type), pointer :: youngest_patch => null() ! pointer to yngest patch at the site
+--- a/parteh/PRTAllometricCNPMod.F90
++++ b/parteh/PRTAllometricCNPMod.F90
+@@ -247,6 +247,12 @@
+   ! l2fr is getting smaller.
+   logical, parameter :: use_unrestricted_contraction = .true.
+ 
++  ! RHESSys host patch (rhessys_host_l2fr_max, 2026-10-24): upper bound on the dynamic leaf-to-fineroot
++  ! ratio. The PID update below only has a floor (l2fr_min); in plants that stay N-limited with full C
++  ! storage it raises l2fr without limit, and the fine roots then take all the C (no stem growth).
++  ! Set by the host (-demog_l2fr_max); <= 0 = no bound (stock FATES).
++  real(r8), public :: host_l2fr_max = -1.0_r8
++
+   ! -------------------------------------------------------------------------------------
+   ! This is the core type that holds this specific
+   ! plant reactive transport (PRT) module
+@@ -866,6 +872,7 @@
+     ! now carbon gain, such as newly recruited plants in a dark understory
+ 
+     l2fr = max(l2fr_min, l2fr + l2fr_delta)
++    if (host_l2fr_max > 0.0_r8) l2fr = min(l2fr, host_l2fr_max)   ! RHESSys host patch
+ 
+     ! Find the updated target fineroot biomass
+     call bfineroot(dbh,ipft,canopy_trim, l2fr, elongf_fnrt, target_c(fnrt_organ),target_dcdd(fnrt_organ))

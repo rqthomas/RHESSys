@@ -94,7 +94,26 @@ int	 valid_option( char *command_line){
 		(strcmp(command_line,"-demog_restart") == 0) ||
 		(strcmp(command_line,"-demog_mgmt") == 0) ||
 		(strcmp(command_line,"-demog_nneed") == 0) ||
+		(strcmp(command_line,"-demog_nsplit") == 0) ||
 		(strcmp(command_line,"-demog_nstore_reg") == 0) ||
+		(strcmp(command_line,"-demog_ncap") == 0) ||
+		(strcmp(command_line,"-demog_medlyn") == 0) ||
+		(strcmp(command_line,"-demog_wetcanopy") == 0) ||
+		(strcmp(command_line,"-soilE_litter") == 0) ||
+		(strcmp(command_line,"-demog_diurnal") == 0) ||
+		(strcmp(command_line,"-demog_trs") == 0) ||
+		(strcmp(command_line,"-demog_coage") == 0) ||
+		(strcmp(command_line,"-demog_dayl") == 0) ||
+		(strcmp(command_line,"-demog_disperse") == 0) ||
+		(strcmp(command_line,"-demog_l2fr_max") == 0) ||
+		(strcmp(command_line,"-demog_min_n") == 0) ||
+		(strcmp(command_line,"-demog_nvcmax") == 0) ||
+		(strcmp(command_line,"-demog_nmine") == 0) ||
+		(strcmp(command_line,"-demog_nforage") == 0) ||
+		(strcmp(command_line,"-demog_nfun") == 0) ||
+		(strcmp(command_line,"-demog_mort_disturb") == 0) ||
+		(strcmp(command_line,"-demog_browse") == 0) ||
+		(strcmp(command_line,"-demog_suppress") == 0) ||
 		(strcmp(command_line,"-demog_litter_direct") == 0) ||
 		(strcmp(command_line,"-demog_wood_resp") == 0) ||
 		(strcmp(command_line,"-redefn") == 0) ||

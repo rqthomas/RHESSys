@@ -158,6 +158,12 @@ struct stream_list_object construct_stream_routing_topology(
 		stream_network_ini[i].wc_NO3=0.0; stream_network_ini[i].wc_NH4=0.0; stream_network_ini[i].wc_DON=0.0;
 		stream_network_ini[i].wc_DOC=0.0; stream_network_ini[i].wc_POC=0.0; stream_network_ini[i].wc_PON=0.0;
 		stream_network_ini[i].V_water=0.0;
+		stream_network_ini[i].DOCr_in=0.0; stream_network_ini[i].DONr_in=0.0;
+		stream_network_ini[i].DOCr_out=0.0; stream_network_ini[i].DONr_out=0.0;
+		stream_network_ini[i].lateral_DOCr=0.0; stream_network_ini[i].lateral_DONr=0.0;
+		stream_network_ini[i].wc_DOCr=0.0; stream_network_ini[i].wc_DONr=0.0;
+		stream_network_ini[i].DOMr_dec_C=0.0; stream_network_ini[i].w_wet=stream_network_ini[i].bottom_width;
+		stream_network_ini[i].lag_water=0.0;
 		stream_network_ini[i].lateral_POC_sed=0.0; stream_network_ini[i].lateral_PON_sed=0.0;
 		stream_network_ini[i].POC_deposit=0.0; stream_network_ini[i].POC_entrain=0.0;
 		stream_network_ini[i].Frag_C=0.0; stream_network_ini[i].Frag_N=0.0;
